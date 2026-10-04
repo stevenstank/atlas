@@ -15,15 +15,16 @@ type Counts struct {
 	Duplicates, Cutoffs, Refusals               int
 	RefusedInInit                               bool
 	MaxDepth                                    int
-	ViolationDepth                              int // depth of the violating state
-	SuccessorSum                                int // Σ |Next(s)| over admitted states
-	Edges                                       int // Σ |Next(s)| over all reachable states (unlimited run)
+	ViolationDepth                              int            // depth of the violating state
+	SuccessorSum                                int            // Σ |Next(s)| over admitted states
+	Edges                                       int            // Σ |Next(s)| over all reachable states (unlimited run)
+	Depths                                      map[string]int // admitted key -> BFS depth
 }
 
 // Explore runs the naive BFS. ok is nil for "no invariant".
 func Explore[S, A any](m core.Model[S, A], ok func(S) bool, maxDepth, maxStates int) Counts {
-	c := Counts{MaxDepth: -1, ViolationDepth: -1}
 	depth := map[string]int{}
+	c := Counts{MaxDepth: -1, ViolationDepth: -1, Depths: depth}
 	var admittedStates []S
 	key := func(s S) string { return string(m.AppendKey(nil, s)) }
 	succ := func(s S) []S {

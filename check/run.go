@@ -17,8 +17,16 @@ import (
 // ErrInvalidConfig), in which case no model code runs. All other outcomes,
 // including model failures, are reported in Result.Status.
 func Run[S, A any](ctx context.Context, m core.Model[S, A], cfg Config[S]) (Result[S, A], error) {
-	if err := cfg.validate(); err != nil {
+	e, err := newEngine(ctx, m, cfg)
+	if err != nil {
 		return Result[S, A]{}, err
+	}
+	return e.result(), nil
+}
+
+func newEngine[S, A any](ctx context.Context, m core.Model[S, A], cfg Config[S]) (*engine[S, A], error) {
+	if err := cfg.validate(); err != nil {
+		return nil, err
 	}
 	e := &engine[S, A]{ctx: ctx, m: m, cfg: cfg, store: core.NewStore(), k: cfg.CheckInterval}
 	if e.k == 0 {
@@ -27,11 +35,16 @@ func Run[S, A any](ctx context.Context, m core.Model[S, A], cfg Config[S]) (Resu
 	e.depthLimit, e.hasDepth = cfg.MaxDepth.Get()
 	e.stateLimit, e.hasStates = cfg.MaxStates.Get()
 	e.stats.MaxDepth = -1
+	return e, nil
+}
+
+// result runs the exploration and attaches the statistics.
+func (e *engine[S, A]) result() Result[S, A] {
 	start := time.Now()
 	res := e.run()
 	res.Stats = e.stats
 	res.Stats.WallTime = time.Since(start)
-	return res, nil
+	return res
 }
 
 type item[S any] struct {

@@ -176,6 +176,13 @@ depths, the verdict, and (for violations) the trace length. Run at least 1,000
 seeds in normal CI-style runs and more in long runs. The seed of any failing
 case is printed so it can be reproduced.
 
+Implemented in `check/fuzz_test.go` (`TestRandomGraphs`: outcome, every
+count, I1/I2, trace minimality and replay, determinism) and
+`check/sets_internal_test.go` (`TestRandomGraphSetsAndDepths`: the same
+admitted set at the same depths). Both run seeds 0–999 from
+`internal/randgraph`. Reproduce a failure with
+`go test ./check -run 'TestRandomGraphs/seed<N>$'`.
+
 ## 9. Fuzz testing
 
 Go native fuzzing (`go test -fuzz`), with these targets:
