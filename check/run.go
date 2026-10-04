@@ -170,7 +170,7 @@ func (e *engine[S, A]) initStep(g *guard, s S) bool {
 		e.refuse(g, InitPhase, 0)
 		return false
 	}
-	if e.store.Len() == core.MaxStoreLen {
+	if atCapacity(e.store.Len()) {
 		return e.stopCapacity(g)
 	}
 	e.stats.InitEmissions++
@@ -200,7 +200,7 @@ func (e *engine[S, A]) nextStep(g *guard, parent core.StateID, depth uint32, s S
 		e.refuse(g, ExpansionPhase, int(depth)+1)
 		return false
 	}
-	if e.store.Len() == core.MaxStoreLen {
+	if atCapacity(e.store.Len()) {
 		return e.stopCapacity(g)
 	}
 	e.stats.Transitions++
@@ -249,6 +249,9 @@ func (e *engine[S, A]) refuse(g *guard, p Phase, depth int) {
 	e.stats.RefusalPhase = p
 	e.end = &Result[S, A]{Status: Bounded, Reason: StateLimit, limit: e.stateLimit, completeBelow: depth}
 }
+
+// atCapacity reports whether a store holding n states can admit no more.
+func atCapacity(n int) bool { return n >= core.MaxStoreLen }
 
 func (e *engine[S, A]) stopCapacity(g *guard) bool {
 	g.stopped = true
