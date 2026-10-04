@@ -19,14 +19,14 @@ are not listed.
 
 | ID | Proposed decision | Rationale | Alternatives considered | Key consequences |
 |----|-------------------|-----------|-------------------------|------------------|
-| D-001 | `Model[S, A]` with `Init(emit)`, `Next(s, emit func(A, S))`, `AppendKey(buf, s)`. Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state; the engine can stop partway through a state's successors (but see the open point in D-001). | `Next(s) []S`; `Actions` + `NextState` (Stateright); `iter.Seq2`. | Callback style is less familiar. Models must copy before mutating. Model types are not interchangeable behind one interface value. |
+| D-001 | `Model[S, A]` with `Init`, `Next`, `AppendKey(buf, s)`, using a push-style API. **Open choice:** 3a `emit func(A, S)`, 3b `emit func(A, S) bool`, or 4 `iter.Seq2[A, S]`. Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state. 3b and 4 also let the engine stop a model early and detect emissions after a stop. | `Next(s) []S`; `Actions` + `NextState` (Stateright). | 3a cannot stop the model mid-emission, so work is wasted. 3b and 4 put a stop obligation on every model. Models must copy before mutating. |
 | D-002 | Identity = exact canonical byte key. No fingerprint-only mode in Phases 1–4. | Exact verdicts. Hash collisions cannot cause missed states. Works for any state shape. | `S comparable` with `map[S]ID`; 64-bit fingerprints (TLC-style). | Cost of encoding every successor. The model author must make the key injective and canonical. Helper encoders are needed. |
 | D-003 | Baseline: `map[string]StateID` + `parent`/`edge`/`depth` slices + FIFO of `(ID, S)`. Optimized layout deferred. | Simplest correct design, using the map's built-in collision handling. Measure before redesigning. | Arena + open addressing; packed fixed-width keys; frontier stores IDs and decodes. | Higher memory per state and GC pressure, both known up front. Phase 4 may replace it, behind the same semantics. |
 | D-004 | Single-threaded BFS only in Phase 1. DFS later, only if measured to be needed. | BFS alone guarantees shortest traces. | DFS; iterative deepening; random simulation. | Wide models may exhaust memory in the frontier. |
 | D-005 | Store `(parent, edge ordinal)` per state; rebuild traces by replaying `Next`. | About 8 B/state. Replay also detects nondeterminism. | Store `(parent, action)`; store full states. | Trace building costs extra `Next` calls. Requires deterministic models, which D-006 requires anyway. |
 | D-006 | Pure model + same config + single-threaded BFS ⇒ identical verdict, trace, and counted stats. Order comes only from `Init`/`Next`. | Reproducible bugs and regression tests; replay depends on it. | Weaker contract (verdict only); seeded randomized order. | Constrains parallelism (D-008) and any randomized data structure. Timing-cut runs are excluded from the contract. |
 | D-011 | Module `github.com/stevenstank/atlas` (**assumes** that GitHub location); `go 1.26`; packages `core`, `check`, `models`, `internal/bench`. | One module keeps things simple. The directive matches the tested toolchain. | Another host or path; a lower directive such as `go 1.23` for wider compatibility. | The path is costly to change after imports exist. The directive sets the minimum Go version for every user. |
-| D-012 | Depth limit D = maximum admitted depth. Depth-D states are checked and expanded; unseen successors at D+1 are refused as `CutoffTransitions`. State limit N includes the initial state; only an unseen in-depth state that would exceed N ends the run (`StateLimitRefusals = 1`). Check order: duplicate → depth → state → admit and check. `Bounded` only after normal completion with ≥ 1 cutoff, or at a state-limit refusal; interruption after a cutoff ⇒ `Incomplete`; `Violation` only for admitted, checked states. One limit reason per run is derived under FIFO BFS, not assumed. | `Bounded` is never spurious; limits that don't matter yield `Exhausted`; deterministic with both limits; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); admit D+1 without expanding; end at the N-th state; state check before depth check. | One extra BFS level of `Next` calls under a depth limit. Two new statistics. SEMANTICS/ARCHITECTURE/TESTING edits on acceptance. |
+| D-012 | Depth limit D = maximum admitted depth. Depth-D states are checked and expanded; unseen successors at D+1 are refused as `CutoffTransitions`. State limit N includes the initial state; only an unseen in-depth state that would exceed N ends the run (`StateLimitRefusals = 1`). Check order: duplicate → depth → state → admit and check. `Bounded` only after normal completion with ≥ 1 cutoff, or at a state-limit refusal; interruption after a cutoff ⇒ `Incomplete`; `Violation` only for admitted, checked states. One limit reason per run is derived under FIFO BFS, not assumed. Multiple initial states use the same check order (a refusal during `Init` ends the run). Counters count only examined emissions; identities I1–I4 have explicit preconditions. Invalid limits are a caller error, not `ModelError`. | `Bounded` is never spurious; limits that don't matter yield `Exhausted`; deterministic with both limits; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); admit D+1 without expanding; end at the N-th state; state check before depth check. | One extra BFS level of `Next` calls under a depth limit. Two new statistics. SEMANTICS/ARCHITECTURE/TESTING edits on acceptance. |
 
 ---
 
@@ -40,33 +40,48 @@ the engine allocates, and whether traces carry readable action labels.
    labels.
 2. `Actions(s) []A` + `NextState(s, a) S`, as in Stateright: readable labels,
    but two calls and a slice per state.
-3. `Next(s S, emit func(A, S))`: labels, no slice, and the engine can stop
-   early.
-4. `Next(s S) iter.Seq2[A, S]`: like 3, using Go 1.23 iterators. Feels
-   idiomatic, but each call may allocate a closure.
+3. **Push callback.** Action labels, no slice per state. Two variants:
+   - **3a** `Next(s S, emit func(A, S))`. The engine **cannot** signal the
+     model to stop. When a violation or a limit ends the run partway through
+     a state's successors, the engine discards the remaining emissions
+     uncounted, and the model still computes them. Semantics are unaffected,
+     but the work is wasted, and nothing can detect a model that ignores
+     termination, because there is no signal to ignore.
+   - **3b** `Next(s S, emit func(A, S) bool)`. Contract:
+     - `true` means continue. `false` means normal early termination, not an
+       error: the model must stop emitting and return from `Next` (or `Init`)
+       immediately.
+     - `false` never means "skip this successor and continue".
+     - If the model emits again after receiving `false`, the engine detects
+       it (it tracks that it returned `false`) and reports `ModelError`.
+     - Positions of earlier steps are unaffected, so trace replay (D-005)
+       still works.
+     - `Init` uses the same contract.
+     - The cost is one `if !emit(...) { return }` per emission in model code.
+4. **Iterator.** `Next(s S) iter.Seq2[A, S]` (and `Init` as `iter.Seq[S]`).
+   Gives the same stop semantics as 3b: `yield` returns `false`, and the Go
+   runtime panics if an iterator yields after that (range-over-func), which
+   the engine would recover as `ModelError`. It needs `go` ≥ 1.23, which is
+   compatible with D-011's proposed `go 1.26`. It feels idiomatic, but each
+   call may allocate a closure; this is unmeasured.
 
-**Recommendation.** Option 3, with generic `Model[S, A any]` and
-`AppendKey(buf, s) []byte` (ARCHITECTURE.md §3.1). Emitted states are
-immutable and owned by the engine.
+**Recommendation.** A push-style API (option 3a, 3b, or 4) rather than 1 or 2,
+with generic `Model[S, A any]` and `AppendKey(buf, s) []byte`
+(ARCHITECTURE.md §3.1). Emitted states are immutable and owned by the engine.
+**The choice among 3a, 3b, and 4 is open and is the owner's.** Bound and
+initialization semantics (D-012) are the same for all three. Only the
+handling of emissions after termination differs (D-012, Initialization rule
+7).
 
-**Trade-offs.** Callbacks are less familiar to new Go users than returned
-slices. Generics rule out mixing different model types behind one interface
-value, which no current requirement needs.
-
-**Open point (found in the 2026-10-04 consistency review).** With
-`emit func(A, S)`, the engine cannot tell `Next` to stop. When a violation or
-a state bound ends the run partway through a state's successors, the engine
-can only ignore the remaining emissions, and the model still computes them.
-Semantics are unaffected, because the ignored steps are not counted (SEMANTICS.md
-§10), but the claimed early-stop benefit does not exist. Fix options:
-`emit func(A, S) bool`, where `false` means stop (this matches `iter.Seq2`
-yield semantics and puts an obligation on the model), or keep the signature
-and accept the wasted work. **Suggestion:** return `bool`. Not applied,
-pending owner review.
+**Trade-offs.** 3a is the simplest for model authors but cannot stop work
+early. 3b and 4 can stop early and detect contract violations, but every
+model must honor the stop signal. Callbacks and iterators are less familiar
+to new Go users than returned slices. Generics rule out mixing different
+model types behind one interface value, which no current requirement needs.
 
 **Validation.** Write the Phase 0 tiny model (`Grid2`) and one protocol model
-in options 3 and 4, and compare readability and allocations per expansion with
-`testing.AllocsPerRun`.
+in options 3a, 3b, and 4, and compare readability and allocations per
+expansion with `testing.AllocsPerRun`.
 
 ## D-002 State identity and canonicalization — Proposed
 
@@ -384,9 +399,9 @@ expansion.
 4. **The check order above.**
 
 Under these assumptions, a state-limit refusal needs an unseen state at depth
-≤ D. Such states arise only while expanding states at depth ≤ D−1, and all of
-those expansions come before the first depth-D expansion, where the only
-cutoffs can occur. Once depth-D expansion begins, every state at depth ≤ D is
+≤ D. Such states arise only during initialization (depth 0) or while
+expanding states at depth ≤ D−1. Both come before the first depth-D
+expansion, which is where the only cutoffs can occur. Once depth-D expansion begins, every state at depth ≤ D is
 admitted, so nothing further is admitted: each successor is a duplicate or a
 cutoff. Hence a refusal, if any, comes before every cutoff and ends the run,
 and the two counters are never both non-zero.
@@ -397,10 +412,88 @@ applies: **the reported reason is the condition that ended the run**. That is
 `StateLimit` if a refusal occurred, because it is terminal, and `DepthLimit`
 otherwise. Both counters are always reported.
 
-**Statistics.** Add `CutoffTransitions` and `StateLimitRefusals` (0 or 1) to
-SEMANTICS.md §10 when this is accepted. The identity becomes:
+### Initialization (multiple initial states)
 
-`transitions = (admitted − |distinct init|) + duplicates + cutoffTransitions + stateLimitRefusals`
+Nothing in the decision records restricts a model to one initial state.
+`Init` may emit any number of states, in a deterministic order, including
+repeats. Proposed rules:
+
+1. **Depth.** Every initial state has depth 0. Because D ≥ 0, the depth check
+   never refuses an initial state.
+2. **Same check order as successors.** For each emission the engine examines:
+   already admitted → `InitDuplicates += 1`; otherwise, if N states are
+   already admitted → refusal (rule 4); otherwise admit it
+   (`InitAdmitted += 1`) and check its invariants immediately.
+3. **Violation in an initial state.** The run stops at once with `Violation`
+   and a 0-step trace. Later `Init` emissions are not examined.
+4. **State limit during initialization.** N counts initial states. If `Init`
+   emits a distinct, unadmitted state while N states are already admitted,
+   that state is not admitted or checked, `StateLimitRefusals = 1` (phase:
+   initialization), and the run ends **immediately** with `Bounded`
+   (`StateLimit`). No state is expanded.
+5. **Incomplete initial set.** Rules 3 and 4 end initialization early, so the
+   initial set may be only partly examined. Emissions after that point are
+   **not examined and not counted**. A `Bounded` claim then covers only the
+   admitted initial states. A `Violation` stands as proven regardless.
+6. **Interruptions.** Cancellation is checked once before `Init` is called.
+   If it fires there, the run is `Incomplete` with every count at 0. It is
+   not checked again until the first dequeue, so `Init` itself is not
+   interruptible. That is acceptable for Phase 1 and would need revisiting
+   for very large initial sets.
+7. **Stopping the model's `Init` call depends on D-001.**
+   - Option 3a (`emit func(A,S)`): the engine cannot stop `Init`. It discards
+     further emissions without examining or counting them.
+   - Option 3b (`emit … bool`): the engine returns `false`. An emission after
+     that is a contract violation and yields `ModelError`.
+   - Option 4 (`iter.Seq2`): the Go runtime itself panics if an iterator
+     yields after `yield` returned `false` (range-over-func, Go 1.23+). The
+     engine recovers and reports `ModelError`.
+
+   Rules 1–6 do not depend on which option is chosen.
+
+### Statistics and accounting identities
+
+Proposed counters. Every one counts only what the engine **observed**:
+
+| Counter | Counts |
+|---------|--------|
+| `InitEmissions` | Initial-state emissions examined |
+| `InitAdmitted` | Distinct initial states admitted |
+| `InitDuplicates` | Examined initial emissions whose state was already admitted |
+| `Admitted` (`StatesDiscovered`) | All admitted states: initial plus newly admitted successors |
+| `Transitions` | Successor emissions examined |
+| `Duplicates` | Examined successor transitions to an already admitted state |
+| `CutoffTransitions` | Examined successor transitions refused by the depth limit |
+| `StateLimitRefusals` | 0 or 1, with its phase (initialization or expansion) |
+
+Emissions the engine never examined are outside the observable contract and
+appear in no counter. That covers emissions after a terminal condition, and
+emissions the model never made because it stopped early. Under option 3a the
+engine physically receives such emissions but discards them uncounted.
+
+**Identities and their preconditions.** Let `R_init` and `R_exp` be 1 if the
+refusal happened in that phase, else 0.
+
+| # | Identity | Valid when |
+|---|----------|------------|
+| I1 | `InitEmissions = InitAdmitted + InitDuplicates + R_init` | every run that called `Init`. Each examined emission takes exactly one branch. |
+| I2 | `Transitions = (Admitted − InitAdmitted) + Duplicates + CutoffTransitions + R_exp` | every run. Each examined transition takes exactly one branch; the violating transition is counted as admitted. Unexamined emissions are excluded on both sides. |
+| I3 | `Admitted` = the reachable count, and `Transitions` = the total number of edges in the reachable graph | only `Exhausted` runs, where every admitted state was fully expanded and nothing was refused. |
+| I4 | `Transitions` = Σ over admitted states of the number of their successors | runs that ended **normally**: `Exhausted`, or `Bounded` (`DepthLimit`). Not after a violation, a state-limit refusal, an interruption, or a model error, where the last expansion may be partial and the frontier unexpanded. |
+
+The current normative identity (SEMANTICS.md §10) is I2 with no cutoff or
+refusal terms and `|Init distinct|` for `InitAdmitted`. It holds for runs with
+no depth or state limit configured.
+
+### Invalid configuration (proposed)
+
+Invalid limits, such as N = 0, D < 0, or a negative timeout, are a **caller
+error, not a model error**. `ModelError` means the model's code misbehaved.
+Proposal: reject invalid configuration before `Init` is called, report it
+separately from the five outcomes, and examine no state. A limit that is
+*unset* means "no limit", and must be distinguishable from 0. D = 0 is valid:
+it admits and expands only initial states. The error type and API shape are
+deliberately left open (D-001, ARCHITECTURE.md §3.7).
 
 ### Run outcomes under this proposal
 
@@ -442,7 +535,7 @@ not only what was observed along the way.
 violating state that was refused (cut off or over the state limit), or never
 reached because of an interruption, was never checked and is **never reported
 as found**. Such runs return `Bounded` or `Incomplete` (CONFORMANCE.md J8,
-J13, J18).
+J13, J18, M4).
 
 **Why `Bounded` does not prove the absence of violations.** `Bounded` means
 the invariants hold in every admitted state. The omitted states, and every
@@ -485,9 +578,11 @@ were verified with a throwaway script that implements the check order above.
   so SEMANTICS.md §8's sentence "limits are checked between state expansions"
   must be narrowed to time, memory, and cancellation.
 - **Edits required on acceptance:** SEMANTICS.md §8 rules 2–3, its status
-  table row for `Bounded`, its Grid2 bound example, and §10;
-  ARCHITECTURE.md §3.9; and removing the "Proposed D-012" markers from
-  TESTING.md §7 and CONFORMANCE.md.
+  table row for `Bounded`, its Grid2 bound example, and §10 (new counters,
+  identities I1–I4, and replacing "repeated `Init` entries are ignored" with
+  `InitDuplicates`); ARCHITECTURE.md §3.9; and removing the pending-decision
+  notes ("Pending decision", "pending D-012", "*(D-012)*") from SEMANTICS.md,
+  ARCHITECTURE.md, TESTING.md §6–§7, and CONFORMANCE.md.
 
 ### Validation
 

@@ -57,10 +57,12 @@ loop until frontier empty / limit / violation:
 
 **Responsibility:** user code that defines the state space (SEMANTICS.md §1).
 
-Recommended shape (D-001):
+Recommended shape (D-001). The callback signature is **open**: 3a
+`emit func(...)` as shown, 3b `emit func(...) bool`, or 4 `iter.Seq2`. See
+D-001.
 
 ```go
-// Proposed. S is the state type, A the action label type.
+// Proposed (option 3a shown). S is the state type, A the action label type.
 type Model[S any, A any] interface {
     // Init emits initial states in a deterministic order.
     Init(emit func(S))
@@ -76,10 +78,12 @@ Invariants are passed to the checker, not to the model:
 `check.Invariant[S]{Name string; Holds func(S) bool}`.
 
 **Why callbacks (`emit`) rather than returning slices:** the model does not
-have to allocate a slice for every state, and the engine can stop partway
-through a state's successors (at a violation or a limit). The cost is that
-user code is slightly less natural to write. Go 1.23+ iterators
-(`iter.Seq2[A,S]`) are an equivalent alternative, also considered in D-001.
+have to allocate a slice for every state. Whether the engine can also make
+the model *stop* partway through a state's successors, at a violation or a
+limit, depends on D-001. With option 3a as shown it cannot: the engine only
+discards the remaining emissions. Options 3b (`emit` returns `bool`) and 4
+(`iter.Seq2`) can. The cost of callbacks is that user code is slightly less
+natural to write.
 
 **Ownership:** once a state is emitted, it belongs to the engine and must not
 be mutated by anyone. States containing slices or maps must be copied by

@@ -56,17 +56,27 @@ These definitions refine SEMANTICS.md §10 for this document.
 |-----------|--------|
 | **Admitted** (`StatesDiscovered` in SEMANTICS.md §10) | Distinct states admitted to the visited set, including the initial state. Every admitted state is checked against the invariants. |
 | **Expanded** | States for which `Next` was called, including a state whose expansion was stopped partway by a violation or a state limit. |
-| **Transitions** | Every `(action, successor)` pair emitted by `Next` and examined by the engine. Only state-changing actions are emitted, so every transition changes the state. |
+| **Init emissions / InitAdmitted / InitDuplicates** | *(D-012, proposed)* Initial-state emissions examined, distinct initial states admitted, and examined emissions of an already admitted initial state. Each water-jug and Grid2 run has 1 / 1 / 0. |
+| **Transitions** | Every `(action, successor)` pair emitted by `Next` and examined by the engine. Emissions after a terminal condition are not examined and not counted. Only state-changing actions are emitted, so every transition changes the state. |
 | **Duplicates** | Transitions whose successor was already in the visited set. |
 | **CutoffTransitions** | *(D-012, proposed)* Transitions from a depth-D state to a previously unseen state at depth D+1, which is not admitted. Counted per transition, not per omitted state, so two transitions to the same omitted state count twice. Always 0 without a depth limit. |
-| **StateLimitRefusals** | *(D-012, proposed)* 1 if the run ended because a previously unseen state, within the depth limit, would have exceeded the state limit N; otherwise 0. That state is not admitted or checked. |
+| **StateLimitRefusals** | *(D-012, proposed)* 1 if the run ended because a previously unseen state, within the depth limit, would have exceeded the state limit N; otherwise 0. That state is not admitted or checked. The phase (initialization or expansion) is recorded. |
 | **Dead ends** | Expanded states whose `Next` emitted nothing (`TerminalStates` in SEMANTICS.md §10). |
 | **Max depth** | The largest BFS depth among admitted states. A state's BFS depth is the length of its shortest path from the initial state. |
 
-Identity, checked on every row (one initial state):
-`Transitions = (Admitted − 1) + Duplicates + CutoffTransitions + StateLimitRefusals`.
-Every examined transition falls into exactly one of these four outcomes: newly
-admitted, duplicate, depth cutoff, or state-limit refusal.
+**Identities and when they hold** (D-012 I1–I4):
+- **I2, every run.** `Transitions = (Admitted − InitAdmitted) + Duplicates +
+  CutoffTransitions + R_exp`. Every *examined* transition takes exactly one
+  branch: newly admitted, duplicate, depth cutoff, or expansion-phase
+  state-limit refusal. Here `InitAdmitted = 1` and `R_exp =
+  StateLimitRefusals`, because no refusal can happen during initialization
+  with a single initial state and N ≥ 1. This is checked on every row below.
+- **I3, `Exhausted` runs only.** For water jugs, Admitted = 16 and
+  Transitions = 58 (the full graph). For Grid2, 9 and 12.
+- **I4, normal completion only** (`Exhausted`, or `Bounded` with
+  `DepthLimit`). Transitions equals the sum of successor counts over admitted
+  states. It does **not** hold for J2 (stopped mid-expansion by a violation),
+  J11 (by a refusal), or J19 (interrupted).
 
 ### Full BFS expansion (no invariant)
 
@@ -202,6 +212,31 @@ No invariant, unbounded maximum depth 4, 9 reachable states, 1 dead end
 (G1, the unbounded Grid2 run, is the exhaustive example in SEMANTICS.md §6:
 9 / 9 / 12 / 4.)
 
+**Grid2-MultiInit** (multiple initial states). This uses Grid2's
+transitions and the invariant `Sum: x + y < 4`. `Init` emits, in order:
+`(0,0)`, `(1,0)`, `(0,0)`, `(0,1)`, `(2,2)`. The third emission is a
+duplicate. All initial states have depth 0. The reachable set is all 9 Grid2
+states, with maximum depth 2 and 1 dead end, `(2,2)`. Extra columns: IE =
+Init emissions examined, IA = InitAdmitted, ID = InitDuplicates, Phase = the
+phase of the state-limit refusal.
+
+| Test | D | N | Invariant | Expected outcome | IE | IA | ID | Adm. | Exp. | Tr | Dup | Cut | SLR (phase) | Notes |
+|------|--:|--:|-----------|------------------|---:|---:|---:|-----:|-----:|---:|----:|----:|-------------|-------|
+| M1 | — | — | none | `Exhausted` | 5 | 4 | 1 | 9 | 9 | 12 | 7 | 0 | 0 | I3 holds: 9 states, 12 edges |
+| M2 | — | — | `Sum` | `Violation` at initial (2,2), 0-step trace | 5 | 4 | 1 | 4 | 0 | 0 | 0 | 0 | 0 | violation found during initialization |
+| M3 | — | 2 | none | `Bounded` (state) | 4 | 2 | 1 | 2 | 0 | 0 | 0 | 0 | 1 (init) | (0,1) refused; 5th emission (2,2) never examined; initial set incomplete |
+| M4 | — | 2 | `Sum` | `Bounded` (state) | 4 | 2 | 1 | 2 | 0 | 0 | 0 | 0 | 1 (init) | violating (2,2) never examined, **not reported** |
+| M5 | — | 3 | none | `Bounded` (state) | 5 | 3 | 1 | 3 | 0 | 0 | 0 | 0 | 1 (init) | (2,2) refused as the 4th distinct initial state |
+| M6 | — | 4 | none | `Bounded` (state) | 5 | 4 | 1 | 4 | 2 | 3 | 2 | 0 | 1 (expansion) | all initial states admitted; (2,0) refused while expanding (1,0) |
+| M7 | 0 | — | none | `Bounded` (depth) | 5 | 4 | 1 | 4 | 4 | 6 | 2 | 4 | 0 | only depth-0 states admitted; (1,1) is cut off twice |
+| M8 | — | 9 | none | `Exhausted` | 5 | 4 | 1 | 9 | 9 | 12 | 7 | 0 | 0 | N = reachable count with multiple initial states; same as M1 |
+| M9 | — | 4 | `Sum` | `Violation` at initial (2,2) | 5 | 4 | 1 | 4 | 0 | 0 | 0 | 0 | 0 | exactly N admitted, then the violation; no refusal |
+
+I1 (`IE = IA + ID + R_init`) and I2 hold on every M row. In M3, for example,
+4 = 2 + 1 + 1. The refused initial emission is accounted for by
+`StateLimitRefusals` in the initialization phase, and the unexamined fifth
+emission appears nowhere.
+
 **Required boundary cases** (TESTING.md §7):
 
 | Case | Tests |
@@ -215,6 +250,9 @@ No invariant, unbounded maximum depth 4, 9 reachable states, 1 dead end
 | Both limits at once: check order | J15, J16, J17, G6 |
 | Interrupted after a depth cutoff ⇒ `Incomplete`, not `Bounded` | J19 |
 | Interruption requested once the frontier is empty ⇒ normal completion | J20 |
+| Multiple initial states, duplicates, violation at initialization | M1, M2, M9 |
+| State limit reached during initialization ⇒ `Bounded`, incomplete initial set | M3, M4, M5 |
+| State limit equal to the reachable count with multiple initial states | M8 |
 
 > **Revision note.** In the previous version, J10, J11, and J13 showed
 > `CutOff = 1`. D-012 now defines `CutoffTransitions` as depth-limit refusals

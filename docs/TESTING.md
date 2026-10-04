@@ -86,8 +86,28 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
   map iteration, or on a counter that changes between calls, must be reported
   as `ModelError` when the engine replays a trace. It must never be reported
   as a valid counterexample.
-- Statistics identity (SEMANTICS.md §10) is checked on every run:
-  `transitions == discovered − |distinct init| + duplicates`.
+- **Statistics identities.** Each identity has preconditions, and a test
+  asserts an identity only when they hold. Counts always describe what the
+  engine **examined so far**, never the full reachable graph, unless the run
+  is `Exhausted`.
+  - *Current semantics* (SEMANTICS.md §10, normative today):
+    `transitions == discovered − |distinct init| + duplicates`. Assert it
+    only on runs with **no depth or state limit configured**. Limited runs
+    are not covered until D-012 is decided.
+  - *Proposed D-012 semantics* ([DECISIONS.md](DECISIONS.md) D-012,
+    "Statistics and accounting identities"):
+    - **I1** `InitEmissions == InitAdmitted + InitDuplicates + R_init` and
+      **I2** `Transitions == (Admitted − InitAdmitted) + Duplicates +
+      CutoffTransitions + R_exp` hold on **every** run, because they count
+      only examined emissions.
+    - **I3** (Admitted and Transitions equal the reference explorer's
+      reachable count and edge count) holds **only** for `Exhausted`.
+    - **I4** (Transitions equals the sum of successor counts over admitted
+      states) holds **only** after normal completion: `Exhausted`, or
+      `Bounded` with `DepthLimit`.
+    - For `Violation`, a state-limit refusal, `Incomplete`, and `ModelError`,
+      tests assert I1 and I2 and the exact counts from CONFORMANCE.md, and
+      must **not** assert I3 or I4.
 
 ## 7. Bounds, limits, and cancellation
 
@@ -102,8 +122,9 @@ Each named test runs every listed case from the
 [CONFORMANCE.md](CONFORMANCE.md) bound tables. Each case fixes the model,
 depth limit D, state limit N, invariant, expected outcome and limit reason,
 and every count: Admitted, Expanded, Transitions, Duplicates,
-`CutoffTransitions`, and `StateLimitRefusals`. The test also asserts the
-four-way statistics identity.
+`CutoffTransitions`, and `StateLimitRefusals`, plus the initialization counts
+for M rows. The test also asserts identities I1 and I2, and asserts I3 and I4
+only under their preconditions (§6).
 
 | Test | Scenario | Expected outcome | Cases |
 |------|----------|------------------|-------|
@@ -116,6 +137,9 @@ four-way statistics identity.
 | `TestViolationWithinBound` | A violation in an admitted state | `Violation`, same trace as unbounded | J9, J14 |
 | `TestCombinedLimitsCheckOrder` | Both limits set; the depth check precedes the state check | as listed | J15, J16, J17, G6 |
 | `TestInterruptAfterCutoffIsIncomplete` | Cancellation after a depth cutoff but before the frontier empties; and after it empties | J19 `Incomplete` (Cut = 1, never `Bounded`); J20 `Bounded` | J19, J20 |
+| `TestMultipleInitialStates` | Several initial emissions with a duplicate; violation in an initial state | `Exhausted`; `Violation` with 0-step trace | M1, M2, M9 |
+| `TestStateLimitDuringInit` | N reached while `Init` is still emitting | `Bounded` (state, init phase); later emissions not examined; violation among them not reported | M3, M4, M5 |
+| `TestStateLimitMultiInit` | Limits with multiple initial states, refused in expansion or at depth 0 | as listed | M6, M7, M8 |
 
 Additional checks: under a depth limit, the admitted set equals the
 reference explorer's states at depth ≤ D. Under a state limit, the admitted
@@ -127,7 +151,8 @@ complete depth d.
 | Scenario                                  | Expected status | Extra checks |
 |-------------------------------------------|-----------------|--------------|
 | Timeout on a large model                  | `Incomplete`    | returns within timeout + slack |
-| Canceled context (before start, mid-run)  | `Incomplete`    | partial stats consistent |
+| Canceled context (before start, mid-run)  | `Incomplete`    | before start: every count 0 and `Init` not called; mid-run: I1 and I2 hold |
+| Invalid configuration (N = 0, D < 0)      | rejected before `Init`, not `ModelError` *(proposed, D-012)* | no state examined |
 | Memory limit on a large model             | `Incomplete`    | reason = MemoryLimit |
 | Violation before any limit                | `Violation`     | limits do not mask it |
 | Infinite model, no bounds, with timeout   | `Incomplete`    | never `Exhausted` |

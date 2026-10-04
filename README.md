@@ -72,7 +72,8 @@ rebuilds counterexamples by replaying the model. Details and alternatives:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/DECISIONS.md](docs/DECISIONS.md).
 
-A *proposed* model shape, not an existing API, may change:
+A *proposed* model shape, not an existing API. It may change, and the callback
+signature is still an open choice in D-001:
 
 ```go
 type Model[S any, A any] interface {

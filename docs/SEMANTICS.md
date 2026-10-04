@@ -296,9 +296,12 @@ trace is usually a precise lead.
 
 ## 10. Reported statistics
 
-> *Pending D-012:* the proposal adds `CutoffTransitions` and
-> `StateLimitRefusals`, and extends the identity at the end of this section.
-> See [DECISIONS.md](DECISIONS.md) D-012.
+> *Pending D-012:* the proposal adds `CutoffTransitions`,
+> `StateLimitRefusals`, and initialization counters (`InitEmissions`,
+> `InitAdmitted`, `InitDuplicates`). It replaces the identity at the end of
+> this section with identities I1–I4, each valid only under stated
+> preconditions. Until then, the identity below applies only to runs with no
+> depth or state limit. See [DECISIONS.md](DECISIONS.md) D-012.
 
 Every result reports, whatever its status:
 
