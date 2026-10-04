@@ -100,8 +100,10 @@ beyond avoiding obvious waste, the optimizer.
   ≥ 1,000 random finite graphs.
 - Every reported counterexample replays independently and is of minimal depth.
 - Every limit and status path is tested: depth bound (both the `Bounded` and
-  `Exhausted` cases), state bound, timeout, cancellation, model panic,
-  nondeterministic model.
+  `Exhausted` cases), state bound, combined bounds, timeout, cancellation,
+  model panic, nondeterministic model. Bound behavior follows D-012, which
+  must be accepted before Phase 1 starts. The expected values are the
+  CONFORMANCE.md bound tables.
 - Determinism: N repeated runs produce identical results.
 - `go vet`, `gofmt`, and `go test -race` are clean.
 

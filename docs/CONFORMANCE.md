@@ -54,16 +54,19 @@ These definitions refine SEMANTICS.md §10 for this document.
 
 | Statistic | Counts |
 |-----------|--------|
-| **Discovered** | Distinct states admitted to the visited set, including the initial state. |
+| **Admitted** (`StatesDiscovered` in SEMANTICS.md §10) | Distinct states admitted to the visited set, including the initial state. Every admitted state is checked against the invariants. |
 | **Expanded** | States for which `Next` was called, including a state whose expansion was stopped partway by a violation or a state limit. |
 | **Transitions** | Every `(action, successor)` pair emitted by `Next` and examined by the engine. Only state-changing actions are emitted, so every transition changes the state. |
 | **Duplicates** | Transitions whose successor was already in the visited set. |
-| **CutoffTransitions** | Transitions whose successor was *not* in the visited set but was refused by a depth or state limit (D-012, proposed). These are counted per transition, not per distinct state. |
+| **CutoffTransitions** | *(D-012, proposed)* Transitions from a depth-D state to a previously unseen state at depth D+1, which is not admitted. Counted per transition, not per omitted state, so two transitions to the same omitted state count twice. Always 0 without a depth limit. |
+| **StateLimitRefusals** | *(D-012, proposed)* 1 if the run ended because a previously unseen state, within the depth limit, would have exceeded the state limit N; otherwise 0. That state is not admitted or checked. |
 | **Dead ends** | Expanded states whose `Next` emitted nothing (`TerminalStates` in SEMANTICS.md §10). |
-| **Max depth** | The largest BFS depth among discovered states. A state's BFS depth is the length of its shortest path from the initial state. |
+| **Max depth** | The largest BFS depth among admitted states. A state's BFS depth is the length of its shortest path from the initial state. |
 
-Identity, checked on every row:
-`Transitions = (Discovered − 1) + Duplicates + CutoffTransitions`.
+Identity, checked on every row (one initial state):
+`Transitions = (Admitted − 1) + Duplicates + CutoffTransitions + StateLimitRefusals`.
+Every examined transition falls into exactly one of these four outcomes: newly
+admitted, duplicate, depth cutoff, or state-limit refusal.
 
 ### Full BFS expansion (no invariant)
 
@@ -119,7 +122,7 @@ visited. Rows are in expansion order, which equals discovery order.
 
 ### Expected results: unbounded runs
 
-| Test | Config | Status | Discovered | Expanded | Transitions | Duplicates | Dead ends | Max depth |
+| Test | Config | Status | Admitted | Expanded | Transitions | Duplicates | Dead ends | Max depth |
 |------|--------|--------|-----------:|---------:|------------:|-----------:|----------:|----------:|
 | J1 | no invariant | `Exhausted` | 16 | 16 | 58 | 43 | 0 | 7 |
 | J2 | `NotFour` | `Violation` | 13 | 11 | 38 | 26 | 0 | 6 |
@@ -143,43 +146,71 @@ It is minimal. The only states with `B = 4` are `(4,3)` at depth 6 and
 
 ### Expected results: bounded runs (proposed D-012 semantics)
 
-These rows assume the **Proposed** rules in [DECISIONS.md](DECISIONS.md)
-D-012, and they become binding only if D-012 is accepted:
-- the depth limit D is the maximum depth of states that may be admitted and
-  checked. States at depth D are expanded. A previously unseen successor is
-  not admitted and counts as one `CutoffTransition`;
-- the state limit N counts the initial state. A previously unseen state that
-  would make the count N + 1 is not admitted or checked, and the run returns
-  `Bounded` immediately.
+> **Pending decision.** These rows follow the **Proposed** rules in
+> [DECISIONS.md](DECISIONS.md) D-012. They are not binding until D-012 is
+> accepted, and SEMANTICS.md §8 currently describes different rules. In
+> summary: depth-D states are checked and expanded, and an unseen successor at
+> depth D+1 is refused as a `CutoffTransition`. The state limit N includes the
+> initial state, and only an unseen state that would exceed N ends the run.
+> For each successor, the checks run in this order: duplicate, then depth
+> limit, then state limit, then admit and check the invariants.
 
-Columns: Disc. = Discovered, Exp. = Expanded, Tr = Transitions,
-Dup = Duplicates, Cut = CutoffTransitions.
+Both models start at `(0,0)`. `—` means no limit. Columns: Adm. = Admitted,
+Exp. = Expanded, Tr = Transitions, Dup = Duplicates, Cut =
+CutoffTransitions, SLR = StateLimitRefusals.
 
-| Test | Config | Status | Disc. | Exp. | Tr | Dup | Cut | Notes |
-|------|--------|--------|------:|-----:|---:|----:|----:|-------|
-| J3 | depth 0 | `Bounded` | 1 | 1 | 2 | 0 | 2 | (5,0), (0,3) refused |
-| J4 | depth 5 | `Bounded` | 12 | 12 | 42 | 29 | 2 | (4,3), (1,0) refused |
-| J5 | depth 6 | `Bounded` | 14 | 14 | 50 | 35 | 2 | (4,0), (1,3) refused |
-| J6 | depth 7 (= max depth) | `Exhausted` | 16 | 16 | 58 | 43 | 0 | every successor of (4,0) and (1,3) already discovered; same as J1 |
-| J7 | depth 8 | `Exhausted` | 16 | 16 | 58 | 43 | 0 | same as J1 |
-| J8 | depth 5 + `NotFour` | `Bounded` | 12 | 12 | 42 | 29 | 2 | violating (4,3) is at depth 6, refused, never checked |
-| J9 | depth 6 + `NotFour` | `Violation` | 13 | 11 | 38 | 26 | 0 | same as J2 |
-| J10 | states 1 | `Bounded` | 1 | 1 | 1 | 0 | 1 | first new successor (5,0) refused |
-| J11 | states 15 | `Bounded` | 15 | 14 | 48 | 33 | 1 | 16th state (1,3) refused in row 14 |
-| J12 | states 16 (= reachable) | `Exhausted` | 16 | 16 | 58 | 43 | 0 | reaching exactly N is not `Bounded`; same as J1 |
-| J13 | states 12 + `NotFour` | `Bounded` | 12 | 11 | 38 | 26 | 1 | (4,3) would be the 13th state, so it is refused and never checked |
-| J14 | states 13 + `NotFour` | `Violation` | 13 | 11 | 38 | 26 | 0 | same as J2 |
+**Water jugs** (model above). Unbounded maximum depth 7, 16 reachable states.
+
+| Test | D | N | Invariant | Expected outcome | Adm. | Exp. | Tr | Dup | Cut | SLR | Notes |
+|------|--:|--:|-----------|------------------|-----:|-----:|---:|----:|----:|----:|-------|
+| J3 | 0 | — | none | `Bounded` (depth) | 1 | 1 | 2 | 0 | 2 | 0 | (5,0) and (0,3) omitted |
+| J4 | 5 | — | none | `Bounded` (depth) | 12 | 12 | 42 | 29 | 2 | 0 | (4,3) and (1,0) omitted |
+| J5 | 6 | — | none | `Bounded` (depth) | 14 | 14 | 50 | 35 | 2 | 0 | (4,0) and (1,3) omitted |
+| J6 | 7 | — | none | `Exhausted` | 16 | 16 | 58 | 43 | 0 | 0 | depth-7 states (4,0), (1,3) are expanded; every successor already admitted |
+| J7 | 8 | — | none | `Exhausted` | 16 | 16 | 58 | 43 | 0 | 0 | limit above the maximum depth |
+| J8 | 5 | — | `NotFour` | `Bounded` (depth) | 12 | 12 | 42 | 29 | 2 | 0 | violating (4,3) is at depth 6, omitted, **not reported** |
+| J9 | 6 | — | `NotFour` | `Violation` at (4,3) | 13 | 11 | 38 | 26 | 0 | 0 | same as J2 |
+| J10 | — | 1 | none | `Bounded` (state) | 1 | 1 | 1 | 0 | 0 | 1 | first unseen successor (5,0) refused |
+| J11 | — | 15 | none | `Bounded` (state) | 15 | 14 | 48 | 33 | 0 | 1 | 16th state (1,3) refused while expanding (0,1) |
+| J12 | — | 16 | none | `Exhausted` | 16 | 16 | 58 | 43 | 0 | 0 | exactly N admitted; no further unseen state, so not `Bounded` |
+| J13 | — | 12 | `NotFour` | `Bounded` (state) | 12 | 11 | 38 | 26 | 0 | 1 | violating (4,3) would be the 13th state; refused, **not reported** |
+| J14 | — | 13 | `NotFour` | `Violation` at (4,3) | 13 | 11 | 38 | 26 | 0 | 0 | same as J2 |
+| J15 | 6 | 14 | none | `Bounded` (depth) | 14 | 14 | 50 | 35 | 2 | 0 | both limits reached; the depth check comes first, so the D+1 states are depth cutoffs, not state-limit refusals |
+| J16 | 6 | 13 | none | `Bounded` (state) | 13 | 12 | 42 | 29 | 0 | 1 | (1,0), at depth 6 within D, would be the 14th state |
+| J17 | 7 | 16 | none | `Exhausted` | 16 | 16 | 58 | 43 | 0 | 0 | both limits equal the true size |
+| J18 | 5 | 12 | `NotFour` | `Bounded` (depth) | 12 | 12 | 42 | 29 | 2 | 0 | violation beyond both limits, not reported |
+
+**Grid2** ([SEMANTICS.md §6](SEMANTICS.md#6-search-order-and-the-shortest-counterexample-guarantee)).
+No invariant, unbounded maximum depth 4, 9 reachable states, 1 dead end
+`(2,2)`.
+
+| Test | D | N | Expected outcome | Adm. | Exp. | Tr | Dup | Cut | SLR | Notes |
+|------|--:|--:|------------------|-----:|-----:|---:|----:|----:|----:|-------|
+| G2 | 3 | — | `Bounded` (depth) | 8 | 8 | 12 | 3 | 2 | 0 | (2,1)→(2,2) and (1,2)→(2,2): one omitted state, two cutoff transitions |
+| G3 | 4 | — | `Exhausted` | 9 | 9 | 12 | 4 | 0 | 0 | (2,2) is expanded and has no successors |
+| G4 | — | 9 | `Exhausted` | 9 | 9 | 12 | 4 | 0 | 0 | N equals the reachable count |
+| G5 | — | 8 | `Bounded` (state) | 8 | 7 | 11 | 3 | 0 | 1 | (2,2) refused while expanding (2,1) |
+| G6 | 3 | 8 | `Bounded` (depth) | 8 | 8 | 12 | 3 | 2 | 0 | both limits reached; the depth check comes first |
+
+(G1, the unbounded Grid2 run, is the exhaustive example in SEMANTICS.md §6:
+9 / 9 / 12 / 4.)
 
 **Required boundary cases** (TESTING.md §7):
 
-| Case | Water jugs | Grid2 ([DECISIONS.md](DECISIONS.md) D-012) |
-|------|------------|-------|
-| Depth limit where every successor is already discovered ⇒ `Exhausted` | J6 | depth 4 |
-| Depth limit with an unseen successor beyond it ⇒ `Bounded` | J3, J4, J5 | depth 3 |
-| State limit exactly equal to the reachable count ⇒ `Exhausted` | J12 | states 9 |
-| State limit that excludes another reachable state ⇒ `Bounded` | J10, J11 | states 8 |
-| Violation only beyond a bound ⇒ `Bounded`, not reported as found | J8, J13 | — |
-| Violation within the bound ⇒ `Violation` | J9, J14 | — |
+| Case | Tests |
+|------|-------|
+| Depth limit where every boundary successor is already admitted ⇒ `Exhausted` | J6, G3 |
+| Depth limit with an unseen successor beyond it ⇒ `Bounded` | J3, J4, J5, G2 |
+| State limit exactly equal to the reachable count ⇒ `Exhausted` | J12, G4 |
+| State limit that excludes a reachable state ⇒ `Bounded` | J10, J11, G5 |
+| Violation only beyond a bound ⇒ `Bounded`, not reported as found | J8, J13, J18 |
+| Violation within the bounds ⇒ `Violation` | J9, J14 |
+| Both limits at once: check order | J15, J16, J17, G6 |
+
+> **Revision note.** In the previous version, J10, J11, and J13 showed
+> `CutOff = 1`. D-012 now defines `CutoffTransitions` as depth-limit refusals
+> only, so the state-limit refusal is counted separately as
+> `StateLimitRefusals = 1`. The totals did not change.
 
 ### Encoding sensitivity
 
@@ -193,4 +224,5 @@ convention ([BENCHMARKS.md §9](BENCHMARKS.md#9-comparisons-with-other-tools)).
 
 Re-worked by hand on 2026-10-04 in the order above. Every row, total, and
 bounded case was then cross-checked with a throwaway BFS script kept outside
-the repository. The hand pass and the script agree on all values.
+the repository. For bounded runs, the script implements the D-012 check order
+exactly. The hand pass and the script agree on all values.

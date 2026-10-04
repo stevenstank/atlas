@@ -93,25 +93,33 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
 
 ### Depth and state limits (proposed D-012 semantics)
 
-The rows marked *(D-012)* follow the **Proposed** semantics in
-[DECISIONS.md](DECISIONS.md) D-012. They become binding only if D-012 is
-accepted. Each named test checks every column in the referenced
-[CONFORMANCE.md](CONFORMANCE.md) row, including `CutoffTransitions` and the
-statistics identity.
+> **Pending decision.** These tests follow the **Proposed** semantics in
+> [DECISIONS.md](DECISIONS.md) D-012, which are not yet accepted. SEMANTICS.md
+> §8 rules 2–3 currently say something different. Phase 1 must not implement
+> bounds until D-012 is decided.
 
-| Test | Scenario | Expected status | Cases |
-|------|----------|-----------------|-------|
-| `TestDepthLimitAllSuccessorsSeen` | Depth limit where every successor of the boundary states is already discovered | `Exhausted` *(D-012)* | water jugs J6; Grid2 depth 4 |
-| `TestDepthLimitUnseenSuccessor` | Depth limit with an unseen successor beyond it | `Bounded` *(D-012)* | J3, J4, J5; Grid2 depth 3 |
+Each named test runs every listed case from the
+[CONFORMANCE.md](CONFORMANCE.md) bound tables. Each case fixes the model,
+depth limit D, state limit N, invariant, expected outcome and limit reason,
+and every count: Admitted, Expanded, Transitions, Duplicates,
+`CutoffTransitions`, and `StateLimitRefusals`. The test also asserts the
+four-way statistics identity.
+
+| Test | Scenario | Expected outcome | Cases |
+|------|----------|------------------|-------|
+| `TestDepthLimitAllSuccessorsSeen` | Depth limit where every successor of the depth-D states is already admitted | `Exhausted`, Cut = 0 | J6, G3 |
+| `TestDepthLimitUnseenSuccessor` | Depth limit with an unseen successor at D+1 | `Bounded` (depth), Cut ≥ 1 | J3, J4, J5, G2 |
 | `TestDepthLimitAboveMaxDepth` | Depth limit greater than the maximum depth | `Exhausted` | J7 |
-| `TestStateLimitEqualsReachable` | State limit exactly equal to the reachable count | `Exhausted` *(D-012)* | J12; Grid2 states 9 |
-| `TestStateLimitExcludesState` | State limit that excludes another reachable state | `Bounded` *(D-012)* | J10, J11; Grid2 states 8 |
-| `TestViolationBeyondBoundNotFound` | A violation exists only beyond a depth or state limit | `Bounded`, never `Violation` *(D-012)* | J8, J13 |
-| `TestViolationWithinBound` | A violation within the limits | `Violation`, same trace as unbounded | J9, J14 |
+| `TestStateLimitEqualsReachable` | N exactly equal to the reachable count | `Exhausted`, SLR = 0 | J12, G4 |
+| `TestStateLimitExcludesState` | N smaller than the reachable count | `Bounded` (state), SLR = 1, Admitted = N | J10, J11, G5 |
+| `TestViolationBeyondBoundNotFound` | A violation exists only in omitted states | `Bounded`, **never** `Violation` | J8, J13, J18 |
+| `TestViolationWithinBound` | A violation in an admitted state | `Violation`, same trace as unbounded | J9, J14 |
+| `TestCombinedLimitsCheckOrder` | Both limits set; the depth check precedes the state check | as listed | J15, J16, J17, G6 |
 
-Additional checks for depth limits: the discovered set equals the reference
-explorer's states at depth ≤ D, and the claim names D. For state limits:
-exactly N states are discovered, and the report states the complete depth d.
+Additional checks: under a depth limit, the admitted set equals the
+reference explorer's states at depth ≤ D. Under a state limit, the admitted
+set is the first N states in BFS discovery order, and the report states the
+complete depth d.
 
 ### Other limits
 

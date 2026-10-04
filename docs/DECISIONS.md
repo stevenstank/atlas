@@ -26,7 +26,7 @@ are not listed.
 | D-005 | Store `(parent, edge ordinal)` per state; rebuild traces by replaying `Next`. | About 8 B/state. Replay also detects nondeterminism. | Store `(parent, action)`; store full states. | Trace building costs extra `Next` calls. Requires deterministic models, which D-006 requires anyway. |
 | D-006 | Pure model + same config + single-threaded BFS ⇒ identical verdict, trace, and counted stats. Order comes only from `Init`/`Next`. | Reproducible bugs and regression tests; replay depends on it. | Weaker contract (verdict only); seeded randomized order. | Constrains parallelism (D-008) and any randomized data structure. Timing-cut runs are excluded from the contract. |
 | D-011 | Module `github.com/stevenstank/atlas` (**assumes** that GitHub location); `go 1.26`; packages `core`, `check`, `models`, `internal/bench`. | One module keeps things simple. The directive matches the tested toolchain. | Another host or path; a lower directive such as `go 1.23` for wider compatibility. | The path is costly to change after imports exist. The directive sets the minimum Go version for every user. |
-| D-012 | Depth limit D = maximum admitted depth. Depth-D states are expanded; unseen successors are refused as `CutoffTransitions`. A state limit N counts the initial state and stops only when an unseen state would exceed N. `Bounded` only if something was refused; violations beyond a bound are not reported as found; cancel/timeout/resources ⇒ `Incomplete`. | `Bounded` is never spurious; limits that don't matter yield `Exhausted`; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); admit depth D+1 without expanding; stop at the N-th state. | One extra BFS level of `Next` calls under a depth limit. New `CutoffTransitions` statistic. SEMANTICS/ARCHITECTURE/TESTING edits on acceptance. |
+| D-012 | Depth limit D = maximum admitted depth. Depth-D states are checked and expanded; unseen successors at D+1 are refused as `CutoffTransitions`. State limit N includes the initial state; only an unseen in-depth state that would exceed N ends the run (`StateLimitRefusals = 1`). Check order: duplicate → depth → state → admit and check. `Bounded` only with evidence of an omitted state; a violation in an admitted state wins; omitted violations are never reported. | `Bounded` is never spurious; limits that don't matter yield `Exhausted`; deterministic with both limits; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); admit D+1 without expanding; end at the N-th state; state check before depth check. | One extra BFS level of `Next` calls under a depth limit. Two new statistics. SEMANTICS/ARCHITECTURE/TESTING edits on acceptance. |
 
 ---
 
@@ -269,126 +269,175 @@ engine cannot know whether a state has successors without calling `Next`, so
 the rule **cannot be implemented as written**. It also contradicts other
 documents:
 
-- SEMANTICS.md §8 (Grid2 with bound 4 ⇒ `Exhausted`) and TESTING.md §7
-  (bound ≥ max depth ⇒ `Exhausted`) both assume the depth-D states *are*
-  expanded.
-- ARCHITECTURE.md §3.9 says "don't expand states at depth = D".
-- Rule 3 (state bound N) does not say what happens when the model has exactly
+- the SEMANTICS.md §8 Grid2 example (bound 4 ⇒ `Exhausted`) assumes depth-D
+  states *are* expanded;
+- ARCHITECTURE.md §3.9 said "don't expand states at depth = D";
+- rule 3 (state bound N) does not say what happens when the model has exactly
   N reachable states.
 
 ### Guiding principle
 
 **`Bounded` must be backed by evidence.** A run is `Bounded` only if the
-engine generated at least one successor that is reachable and previously
-unseen, and refused it because of a limit. Reaching a limit is not, by
-itself, proof that unexplored states remain.
+engine generated at least one transition to a reachable, previously unseen
+state and refused to admit that state because of a configured limit. Reaching
+a limit is not, by itself, evidence that anything was omitted.
 
 ### Options considered
 
-| | Depth-D states | Successors beyond the bound | Bound equal to the true size | Cost |
+| | Depth-D states | Unseen successors beyond D | Limit equal to the true size | Cost |
 |---|---|---|---|---|
-| (a) | not expanded | never generated | `Bounded` (cannot know otherwise) | none |
-| **(b)** | **expanded** | **looked up; unseen ones refused and counted as `CutoffTransitions`** | **`Exhausted`** | one extra level of `Next` + key lookups |
-| (c) | expanded | unseen ones admitted and checked, not expanded | `Exhausted` | the claim becomes "≤ D, plus some of D+1", which is confusing |
+| (a) | checked, not expanded | never generated | `Bounded` (cannot know otherwise) | none |
+| **(b)** | **checked and expanded** | **refused; counted as `CutoffTransitions`** | **`Exhausted`** | one extra level of `Next` calls and lookups |
+| (c) | checked and expanded | admitted and checked, not expanded | `Exhausted` | the claim becomes "≤ D, plus some of D+1", which is confusing |
 
-State bound: (i) stop as soon as the N-th state is admitted and report
-`Bounded`, or **(ii) stop only when an unseen state would exceed N.**
+State limit: (i) end the run as soon as the N-th state is admitted, or **(ii)
+end it only when an unseen state would exceed N.**
 
-Proposed: **(b) + (ii)**.
+Proposed: **(b) + (ii)**, specified below.
 
-### Proposed semantics (replacement text for SEMANTICS.md §8 rules 2–3, not yet applied)
+### Proposed rules (not yet applied to SEMANTICS.md)
 
-> **Depth limit D (D ≥ 0).**
-> 1. D is the maximum depth of states that may be admitted to the visited
->    set and checked against the invariants.
-> 2. States at depth D are expanded, to detect their successors.
-> 3. A successor that was already discovered is counted as a duplicate, as
->    usual.
-> 4. A previously unseen successor of a depth-D state lies beyond the limit.
->    It is not admitted, not checked, and not enqueued. Each such transition
->    counts as one `CutoffTransition`.
-> 5. After every boundary state has been examined (the frontier is empty),
->    the result is `Bounded` if `CutoffTransitions > 0` and `Exhausted`
->    otherwise.
->
-> **State limit N (N ≥ 1).**
-> 1. N counts every admitted state, including initial states.
-> 2. When a previously unseen state would make the count N + 1, it is not
->    admitted or checked. It counts as one `CutoffTransition`, and the run
->    returns `Bounded` immediately.
-> 3. Reaching exactly N states does not by itself imply `Bounded`. If the
->    frontier then empties without another unseen state appearing, the result
->    is `Exhausted`.
->
-> **Violations.** A violation in an admitted state, that is, within the
-> explored bounds, returns `Violation`. A violating state beyond a bound is
-> never admitted or checked, so it is not reported as found, and the run
-> returns `Bounded`.
->
-> **Cancellation, timeout, resource exhaustion.** If one of these stops the
-> run before it can reach a conclusion (the frontier is non-empty and no
-> violation was found), the result is `Incomplete`. It does not claim that
-> unexplored states exist, only that the question was not settled. These
-> limits are checked before the next state is dequeued. If the frontier is
-> already empty, the run is `Exhausted` or `Bounded` under the rules above.
->
-> **Claims.** A `Bounded` run caused by a depth limit claims "no invariant
-> violation in any state at depth ≤ D". A `Bounded` run caused by a state
-> limit claims "no violation among the N admitted states" and reports the
-> depth d below which BFS was complete.
+**Terms.** *Admitted* means inserted into the visited set (counted in
+`StatesDiscovered`). Every admitted state is checked against the invariants
+immediately. The initial state is at depth 0, and a successor of a state at
+depth d is at depth d + 1.
 
-**Statistic.** Add `CutoffTransitions`, which counts *transitions* refused by
-a limit, not distinct states. Two refused transitions may lead to the same
-state (Grid2 depth 3 below). The identity in SEMANTICS.md §10 becomes:
-`transitions = (discovered − |distinct init|) + duplicates + cutoffTransitions`.
+**Depth limit D (D ≥ 0)** is the maximum depth of states the engine may admit
+and check.
+
+1. States at depth ≤ D are admitted, checked, and expanded. This includes
+   states at depth D.
+2. A successor that is already admitted is a duplicate, handled as usual.
+3. A previously unseen successor of a depth-D state lies at depth D + 1. It is
+   not admitted, not checked, and not enqueued, and the transition counts as
+   one `CutoffTransition`.
+4. All permitted expansions, including every depth-D state, are performed
+   unless a violation, a model error, a state-limit refusal, or an
+   `Incomplete` condition ends the run first.
+5. If the run ends normally (the frontier is empty), the result is `Bounded`
+   if `CutoffTransitions ≥ 1`, and `Exhausted` otherwise.
+
+`CutoffTransitions` counts **transitions**, not distinct omitted states. Two
+depth-D states with the same unseen successor contribute 2 (Grid2 G2).
+Duplicates of an *admitted* state are never cutoffs. An omitted state is
+never admitted, so later transitions to it are cutoffs again, not duplicates.
+
+**State limit N (N ≥ 1)** is the maximum number of admitted states, including
+the initial state.
+
+1. The engine never admits more than N states.
+2. Transitions to already admitted states are duplicates, handled as usual.
+3. If a transition reaches a previously unseen state, within the depth limit,
+   while N states are already admitted, that state is not admitted or checked.
+   `StateLimitRefusals` becomes 1, and the run ends immediately with
+   `Bounded`.
+4. Admitting the N-th state does **not** by itself imply `Bounded`.
+   Exploration of the admitted frontier continues.
+5. If the frontier empties without another unseen state being reached, the
+   result is `Exhausted`. This includes the case where the reachable count is
+   exactly N.
+
+Initial states are subject to the same rule. If `Init` emits more than N
+distinct states, the (N+1)-th one triggers rule 3.
+
+**Check order for each successor (both limits may be set):**
+
+```
+1. key already admitted?            → Duplicate
+2. depth(successor) > D?            → CutoffTransition (not admitted); continue
+3. admitted count == N?             → StateLimitRefusal; stop with Bounded
+4. admit; check invariants          → Violation? stop with Violation
+5. enqueue
+```
+
+*Why depth comes before the state limit.* A successor beyond D could never be
+admitted, whatever the value of N. Counting it against N would end the run
+early, skip in-bound exploration that is still permitted, and attribute the
+result to the wrong limit. With this order, the state limit fires only for
+states that the depth limit would have admitted. The order is fixed, and
+emission order is deterministic (D-006), so combined-limit runs are
+reproducible.
+
+*Consequence under BFS.* Depth cutoffs only arise while expanding depth-D
+states, and BFS admits every in-bound state before expanding any depth-D
+state. A state-limit refusal can therefore only happen *before* the first
+depth cutoff. A single BFS run reports at most one limit reason: `DepthLimit`
+or `StateLimit`. CONFORMANCE.md J15 shows both limits reached at the same
+time, resolved as `DepthLimit`.
+
+**Statistics.** Add `CutoffTransitions` and `StateLimitRefusals` (0 or 1) to
+SEMANTICS.md §10 when this is accepted. The identity becomes:
+
+`transitions = (admitted − |distinct init|) + duplicates + cutoffTransitions + stateLimitRefusals`
+
+### Run outcomes under this proposal
+
+| Outcome | Meaning |
+|---------|---------|
+| `Exhausted` | The frontier emptied with `CutoffTransitions = 0` and `StateLimitRefusals = 0`, and no violation. The whole reachable state space was explored under the model semantics. |
+| `Bounded` | The engine established that at least one reachable state was omitted because of a configured depth or state limit (`CutoffTransitions ≥ 1` or `StateLimitRefusals = 1`), and no violation was found among admitted states. The reason is `DepthLimit` or `StateLimit`. |
+| `Incomplete` | The run could not reach a conclusion: cancellation, timeout, or resource exhaustion stopped it while the frontier was non-empty. It makes no claim that omitted states exist. These conditions are checked before the next state is dequeued. If the frontier is already empty, the result is `Exhausted` or `Bounded` as above. |
+| `Violation` | An invariant failed in an admitted state. The run stops at once. |
+| `ModelError` | The model panicked or broke the model contract, for example through nondeterminism detected on replay or mutation of an emitted state. |
+
+**Precedence.**
+- A violation found before any terminating limit returns `Violation`, even if
+  depth cutoffs occurred earlier. The engine does **not** keep exploring after
+  a violation to find out whether the run would also have been `Bounded`.
+- A state-limit refusal ends the run, so no later violation can be found.
+- A violating state that was omitted (cut off or refused) was never checked
+  and is **never reported as found**. Such runs return `Bounded`
+  (CONFORMANCE.md J8, J13, J18).
+- `ModelError` ends the run when it occurs, and replaces any other outcome.
+
+**Why `Bounded` does not prove the absence of violations.** `Bounded` means
+the invariants hold in every admitted state. The omitted states, and every
+state reachable only through them, were never generated or checked. A
+violation may exist there. J8 is a concrete example: with D = 5, the run
+returns `Bounded`, yet the violating state (4,3) is one step beyond the
+limit. A `Bounded` result supports only its stated claim:
+
+- depth limit: "no violation in any state at depth ≤ D". This is exact,
+  because BFS admits every state at depth ≤ D;
+- state limit: "no violation among the N admitted states", which are all
+  states at depth < d plus some at depth d, with d reported.
 
 ### Why (b) is sound
 
-BFS admits every depth-D state before expanding any depth-D state. So when a
-depth-D state is expanded, every state at depth ≤ D is already in the
-visited set, and a successor that is not in the set has true BFS depth
-exactly D + 1. Each cutoff transition therefore points at a real, reachable,
-unexplored state, which is the evidence `Bounded` requires. If no cutoff
-occurs, every successor of every admitted state was already admitted. The
-visited set is then closed under `Next`, so it equals the whole reachable
-set, and `Exhausted` is correct.
+When the first depth-D state is expanded, every state at depth ≤ D is already
+admitted, because BFS admits states level by level and no state limit
+intervened. A successor that is not admitted therefore has true BFS depth
+exactly D + 1. Each cutoff transition points at a real, reachable, omitted
+state, which is the evidence `Bounded` requires. If the frontier empties with
+no cutoff and no refusal, every successor of every admitted state was
+admitted. The admitted set is then closed under `Next`, so it equals the
+whole reachable set, and `Exhausted` is correct.
 
-### Boundary cases and expected outcomes
+### Boundary cases
 
-Grid2 (SEMANTICS.md §6, maximum depth 4, 9 states). All rows were verified
-with a throwaway script:
-
-| Config | Status | Disc. | Exp. | Tr | Dup | Cutoff | Why |
-|---|---|---:|---:|---:|---:|---:|---|
-| depth 3 | `Bounded` | 8 | 8 | 12 | 3 | 2 | (2,1)→(2,2) and (1,2)→(2,2): one state, two cutoff transitions |
-| depth 4 | `Exhausted` | 9 | 9 | 12 | 4 | 0 | (2,2) is expanded and has no successors |
-| states 9 | `Exhausted` | 9 | 9 | 12 | 4 | 0 | the limit equals the reachable count |
-| states 8 | `Bounded` | 8 | 7 | 11 | 3 | 1 | (2,2) would be the 9th state, refused while expanding (2,1) |
-
-Water jugs: J3–J14 in [CONFORMANCE.md](CONFORMANCE.md). They include every
-required boundary case: a depth limit where every successor is already seen,
-a depth limit with an unseen successor, a state limit equal to the reachable
-count, a state limit that excludes a reachable state, and violations that
-exist only beyond a bound.
+Every case, with model, limits, outcome, admitted count, and cutoff count, is
+in [CONFORMANCE.md](CONFORMANCE.md): water jugs J3–J18 and Grid2 G2–G6. All
+were verified with a throwaway script that implements the check order above.
 
 ### Consequences if accepted
 
 - **Correctness:** `Bounded` is never reported spuriously. A limit that turns
-  out not to matter yields the stronger, true `Exhausted`.
-- **Cost:** at most one extra BFS level of `Next` calls and key lookups (no
-  insertions) under a depth limit. A state limit adds nothing.
-- **Implementation:** one depth or count comparison per unseen successor, one
-  new counter, and one status rule. The state limit stops inside an
-  expansion, as violations already do, so SEMANTICS.md §8's sentence "limits
-  are checked between state expansions" must be narrowed to time, memory, and
-  cancellation.
-- **Edits required on acceptance:** SEMANTICS.md §8 rules 2–3, its Grid2
-  bound example, and §10; ARCHITECTURE.md §3.9; and removing the "requires
-  D-012" markers from TESTING.md §7 and CONFORMANCE.md.
+  out not to matter yields the true and stronger `Exhausted`.
+- **Cost:** at most one extra BFS level of `Next` calls and visited-set
+  lookups under a depth limit, with no insertions. A state limit adds one
+  comparison per unseen successor.
+- **Implementation:** the five-step check order, two counters, and one status
+  rule. The state limit stops inside an expansion, as violations already do,
+  so SEMANTICS.md §8's sentence "limits are checked between state expansions"
+  must be narrowed to time, memory, and cancellation.
+- **Edits required on acceptance:** SEMANTICS.md §8 rules 2–3, its status
+  table row for `Bounded`, its Grid2 bound example, and §10;
+  ARCHITECTURE.md §3.9; and removing the "Proposed D-012" markers from
+  TESTING.md §7 and CONFORMANCE.md.
 
 ### Validation
 
-CONFORMANCE.md J3–J14, the Grid2 table above, and the named tests in
-TESTING.md §7. In random-graph differential tests, use limits equal to the
-reference explorer's maximum depth and to its exact state count, and check
-that the result is `Exhausted`.
+The CONFORMANCE.md bound tables and the named tests in TESTING.md §7. In
+random-graph differential tests, use limits equal to the reference
+explorer's maximum depth and to its exact state count (expect `Exhausted`),
+and one less than each (expect `Bounded`).

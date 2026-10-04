@@ -205,8 +205,8 @@ Limits:
 
 | Limit         | Mechanism                             | Exactness |
 |---------------|---------------------------------------|-----------|
-| Depth bound   | don't expand states at depth = D *(D-012 proposes: expand them; refuse unseen successors as `CutoffTransitions`)* | exact |
-| State bound   | stop after N discoveries *(D-012 proposes: N includes the initial state; stop only when an unseen state would exceed N)* | exact |
+| Depth bound   | don't expand states at depth = D *(pending D-012, proposed: depth-D states are checked and expanded; unseen D+1 successors are refused as `CutoffTransitions`)* | exact |
+| State bound   | stop after N discoveries *(pending D-012, proposed: N includes the initial state; stop only when an unseen in-depth state would exceed N. The depth check runs before the state check.)* | exact |
 | Time limit    | context deadline                      | approximate, checked every K |
 | Memory limit  | `runtime/metrics` heap sample vs. cap | approximate; may overshoot |
 
