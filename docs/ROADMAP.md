@@ -60,7 +60,7 @@ review, test and benchmark methodology, hand-worked examples.
   [RESEARCH.md](RESEARCH.md)
 - [x] Hand-worked tiny model `Grid2` with exact expected statistics and trace
   (SEMANTICS.md §6)
-- [ ] [TESTING.md](TESTING.md), [BENCHMARKS.md](BENCHMARKS.md),
+- [x] [TESTING.md](TESTING.md), [BENCHMARKS.md](BENCHMARKS.md),
   [OPTIMIZATION.md](OPTIMIZATION.md), README
 - [ ] A second hand-worked model with a non-trivial shortest counterexample:
   the water-jug puzzle (3 L and 5 L jugs, bad state "big jug holds 4 L"). The

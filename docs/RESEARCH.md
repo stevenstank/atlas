@@ -77,7 +77,7 @@ run as real systems. Atlas is Go and does not plan an actor runtime. A
 reasonable differentiator is a Go-native engine for teams working in Go, with
 explicit result-status semantics and a measured performance story. It is
 not "Stateright, but faster". No such claim can be made without benchmarks
-(BENCHMARKS.md §Comparisons).
+(BENCHMARKS.md §9).
 
 ## Porcupine
 
