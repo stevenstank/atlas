@@ -205,8 +205,8 @@ Limits:
 
 | Limit         | Mechanism                             | Exactness |
 |---------------|---------------------------------------|-----------|
-| Depth bound   | don't expand states at depth = D      | exact |
-| State bound   | stop after N discoveries              | exact |
+| Depth bound   | don't expand states at depth = D *(D-012 proposes: expand them, count new successors as `CutOff`)* | exact |
+| State bound   | stop after N discoveries *(D-012 proposes: stop when an (N+1)-th state would be inserted)* | exact |
 | Time limit    | context deadline                      | approximate, checked every K |
 | Memory limit  | `runtime/metrics` heap sample vs. cap | approximate; may overshoot |
 

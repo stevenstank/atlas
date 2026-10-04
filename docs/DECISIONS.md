@@ -13,17 +13,20 @@ accepted ([ROADMAP.md](ROADMAP.md)).
 
 ## Phase 0 review summary (awaiting owner decision)
 
-Nothing in this table is accepted. Each row needs an explicit owner decision:
-accept, revise, or reject.
+**Accepted: none.** Every row below is *Proposed* and needs an explicit owner
+decision: accept, revise, or reject. D-007 to D-010 do not block Phase 1 and
+are not listed.
 
 | ID | Proposed decision | Rationale | Alternatives considered | Key consequences |
 |----|-------------------|-----------|-------------------------|------------------|
-| D-001 | `Model[S, A]` with `Init(emit)`, `Next(s, emit func(A, S))`, `AppendKey(buf, s)`. Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state; the engine can stop partway through a state's successors. | `Next(s) []S`; `Actions` + `NextState` (Stateright); `iter.Seq2`. | Callback style is less familiar. Models must copy before mutating. Model types are not interchangeable behind one interface value. |
+| D-001 | `Model[S, A]` with `Init(emit)`, `Next(s, emit func(A, S))`, `AppendKey(buf, s)`. Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state; the engine can stop partway through a state's successors (but see the open point in D-001). | `Next(s) []S`; `Actions` + `NextState` (Stateright); `iter.Seq2`. | Callback style is less familiar. Models must copy before mutating. Model types are not interchangeable behind one interface value. |
 | D-002 | Identity = exact canonical byte key. No fingerprint-only mode in Phases 1–4. | Exact verdicts. Hash collisions cannot cause missed states. Works for any state shape. | `S comparable` with `map[S]ID`; 64-bit fingerprints (TLC-style). | Cost of encoding every successor. The model author must make the key injective and canonical. Helper encoders are needed. |
 | D-003 | Baseline: `map[string]StateID` + `parent`/`edge`/`depth` slices + FIFO of `(ID, S)`. Optimized layout deferred. | Simplest correct design, using the map's built-in collision handling. Measure before redesigning. | Arena + open addressing; packed fixed-width keys; frontier stores IDs and decodes. | Higher memory per state and GC pressure, both known up front. Phase 4 may replace it, behind the same semantics. |
 | D-004 | Single-threaded BFS only in Phase 1. DFS later, only if measured to be needed. | BFS alone guarantees shortest traces. | DFS; iterative deepening; random simulation. | Wide models may exhaust memory in the frontier. |
 | D-005 | Store `(parent, edge ordinal)` per state; rebuild traces by replaying `Next`. | About 8 B/state. Replay also detects nondeterminism. | Store `(parent, action)`; store full states. | Trace building costs extra `Next` calls. Requires deterministic models, which D-006 requires anyway. |
 | D-006 | Pure model + same config + single-threaded BFS ⇒ identical verdict, trace, and counted stats. Order comes only from `Init`/`Next`. | Reproducible bugs and regression tests; replay depends on it. | Weaker contract (verdict only); seeded randomized order. | Constrains parallelism (D-008) and any randomized data structure. Timing-cut runs are excluded from the contract. |
+| D-011 | Module `github.com/stevenstank/atlas` (**assumes** that GitHub location); `go 1.26`; packages `core`, `check`, `models`, `internal/bench`. | One module keeps things simple. The directive matches the tested toolchain. | Another host or path; a lower directive such as `go 1.23` for wider compatibility. | The path is costly to change after imports exist. The directive sets the minimum Go version for every user. |
+| D-012 | Expand states at the depth limit; refuse new successors as `CutOff`. A state bound stops only at the (N+1)-th new state. `Bounded` requires a refused state. | `Bounded` is never spurious; bounds that don't matter yield `Exhausted`; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); insert depth D+1 without expanding; stop at the N-th state. | One extra BFS level of `Next` calls under a depth bound. New `CutOff` statistic. SEMANTICS/ARCHITECTURE/TESTING edits needed on acceptance. |
 
 ---
 
@@ -49,6 +52,17 @@ immutable and owned by the engine.
 **Trade-offs.** Callbacks are less familiar to new Go users than returned
 slices. Generics rule out mixing different model types behind one interface
 value, which no current requirement needs.
+
+**Open point (found in the 2026-10-04 consistency review).** With
+`emit func(A, S)`, the engine cannot tell `Next` to stop. When a violation or
+a state bound ends the run partway through a state's successors, the engine
+can only ignore the remaining emissions, and the model still computes them.
+Semantics are unaffected, because the ignored steps are not counted (SEMANTICS.md
+§10), but the claimed early-stop benefit does not exist. Fix options:
+`emit func(A, S) bool`, where `false` means stop (this matches `iter.Seq2`
+yield semantics and puts an obligation on the model), or keep the signature
+and accept the wasted work. **Suggestion:** return `bool`. Not applied,
+pending owner review.
 
 **Validation.** Write the Phase 0 tiny model (`Grid2`) and one protocol model
 in options 3 and 4, and compare readability and allocations per expansion with
@@ -202,10 +216,10 @@ mitigated by printing the terminal-state count in every result.
 **Validation.** Owner decision. A test model with a deliberate deadlock is
 needed in either case.
 
-## D-011 Module path and package layout — Proposed (awaiting owner approval)
+## D-011 Module path, Go directive, and package layout — Proposed (awaiting owner approval)
 
-**Context.** No `go.mod` exists. The module path depends on where the
-repository is hosted, which is the owner's decision.
+**Context.** No `go.mod` exists. Two values must be fixed before Phase 1
+creates it.
 
 **Proposed module path: `github.com/stevenstank/atlas`.**
 ⚠ *Assumption to approve:* the repository will be published at
@@ -213,55 +227,157 @@ repository is hosted, which is the owner's decision.
 the path must change before any package imports it. Changing it afterward
 means rewriting every import.
 
-**Recommendation.** One module. Packages: `core`, `check`, `models`,
+**Proposed Go directive: `go 1.26`.** This is a **compatibility decision**,
+not a record of which toolchain happens to be installed locally. The `go`
+line in `go.mod`:
+
+- sets the **minimum** Go version needed to build the module. Since Go 1.21
+  it is enforced: an older toolchain refuses to build, or, depending on
+  `GOTOOLCHAIN`, downloads a newer one. Every user of the Atlas library
+  inherits this minimum;
+- selects **language semantics** for the module. For example, per-iteration
+  loop variables apply only when the directive is ≥ 1.22.
+
+Features Atlas is expected to need: generics (1.18), `min`/`max` builtins
+(1.21), per-iteration loop variables (1.22), and, only if D-001 picks
+`iter.Seq2`, range-over-func iterators (1.23). A lower directive such as
+`go 1.23` would therefore work for the planned code and accept more
+toolchains. `go 1.26` keeps the build matched to what development and CI
+actually test. The Go project supports the two most recent major releases,
+so check <https://go.dev/doc/devel/release> when deciding. The
+recommendation is `go 1.26` because nothing is gained by claiming
+compatibility that is never tested. If you want wider reach, choose the lower
+version and add a CI job that builds with it. No separate `toolchain` line is
+proposed.
+
+**Package layout.** One module. Packages: `core`, `check`, `models`,
 `internal/bench`, and later `optimize`. No public `cmd/` until a CLI is
 justified. The one-shot benchmark driver proposed in
 [BENCHMARKS.md](BENCHMARKS.md) §5 lives under `internal/` and is not a public
-CLI. The `go` directive is still to be decided. The proposal is `go 1.26`,
-the version in use, unless the owner wants to support older toolchains.
+CLI.
 
-**Validation.** The owner confirms the module path and the `go` directive
+**Validation.** The owner approves the module path and the `go` directive
 before Phase 1 creates `go.mod`.
 
-## D-012 Completion status under depth and state bounds — Unresolved
+## D-012 Completion status under depth and state bounds — Proposed (awaiting owner approval)
 
-**Context.** SEMANTICS.md §8 rule 2 says a depth-bounded run is `Exhausted` if
-"no state at depth D has any successor", but it also says states at depth D
-are "not expanded". The engine cannot know whether a state has successors
-without calling `Next`. The rule cannot be implemented as written.
-SEMANTICS.md §6 (`Grid2`, bound 4 ⇒ `Exhausted`) and TESTING.md §7
-("bound ≥ max depth ⇒ `Exhausted`") both assume the depth-D states *are*
-expanded. Rule 3 (state bound N) has a similar ambiguity: if the model has
-exactly N reachable states, is the run `Bounded` or `Exhausted`?
+### Problem
 
-**Options (depth bound).**
-- (a) Never call `Next` on depth-D states. Report `Bounded` whenever any
-  depth-D state exists. Simple, but `Grid2` bound 4 and water jugs bound 7
-  become `Bounded` even though every state was found.
-- (b) Call `Next` on depth-D states, but do not insert new successors. Count
-  each such transition as `CutOff`. The run is `Exhausted` if and only if
-  `CutOff == 0` (and no other limit fired). This costs one extra level of
-  `Next` calls and key lookups, with no insertions. It needs a new
-  `CutOff` statistic, and the identity becomes
-  `transitions = discovered − |init| + duplicates + cutoff`.
-- (c) Like (b), but also insert and check the depth-D+1 states. This muddies
-  the claim ("≤ D" becomes "≤ D+1, partially").
+SEMANTICS.md §8 rule 2 says states at depth D are "not expanded", and also
+that the run is `Exhausted` if "no state at depth D has any successor". The
+engine cannot know whether a state has successors without calling `Next`, so
+the rule **cannot be implemented as written**. It also contradicts other
+documents:
 
-**Options (state bound).**
-- (i) Stop as soon as the N-th state is discovered, and always report
-  `Bounded`.
-- (ii) Stop only when an (N+1)-th new state would be inserted (counted as
-  `CutOff`). If that never happens, the run is `Exhausted`.
+- SEMANTICS.md §8 (Grid2 with bound 4 ⇒ `Exhausted`) and TESTING.md §7
+  (bound ≥ max depth ⇒ `Exhausted`) both assume the depth-D states *are*
+  expanded.
+- ARCHITECTURE.md §3.9 says "don't expand states at depth = D".
+- Rule 3 (state bound N) does not say what happens when the model has exactly
+  N reachable states.
 
-**Recommendation.** (b) and (ii). They make the existing examples and tests
-correct. A bound that turns out not to matter yields `Exhausted`, which is
-true, and the claim "no violation at depth ≤ D" is unchanged. Expected
-values for both options are in [CONFORMANCE.md](CONFORMANCE.md) (J3, J4).
+### Guiding principle
 
-**Consequences if accepted.** Update SEMANTICS.md §8 rules 2–3 and §10,
-ARCHITECTURE.md §3.9, and TESTING.md §7. These edits are not made yet, pending
-the decision.
+**`Bounded` must be backed by evidence.** A run is reported `Bounded` only if
+the engine has generated a concrete successor that is reachable and not in
+the visited set, and that it refused to insert because of the bound. Hitting
+a limit is not, by itself, proof that unexplored states remain. Conversely, a
+run is `Exhausted` only when the frontier is empty and no successor was ever
+refused.
 
-**Validation.** Conformance tests J3/J4 and `Grid2` with bounds 3 and 4.
-Random-graph differential tests where the bound equals the reference
-explorer's maximum depth.
+### Options considered
+
+| | Depth-D states | Successors beyond the bound | Bound equal to the true size | Cost |
+|---|---|---|---|---|
+| (a) | not expanded | never generated | `Bounded` (cannot know otherwise) | none |
+| **(b)** | **expanded** | **generated and looked up; new ones counted as `CutOff`, not inserted** | **`Exhausted`** | one extra level of `Next` + key lookups |
+| (c) | expanded | new ones inserted and checked, not expanded | `Exhausted` | the claim becomes "≤ D, plus some of D+1", which is confusing |
+
+For the state bound: (i) stop as soon as the N-th state is inserted and report
+`Bounded`, or **(ii) stop when an (N+1)-th new state would be inserted.**
+
+### Proposed rules (replacement text for SEMANTICS.md §8 rules 2–3, not yet applied)
+
+> **2. Depth bound D (D ≥ 0).** States at depth ≤ D are discovered and checked
+> against the invariants. States at depth D **are expanded**. Each successor
+> is looked up in the visited set. Duplicates are counted as usual. A
+> successor that is not in the visited set is counted in `CutOff`. It is
+> **not** inserted, not checked against invariants, and not enqueued.
+> Exploration continues until the frontier is empty. If `CutOff = 0`, the
+> status is `Exhausted`. Otherwise it is `Bounded`, with the claim "no
+> invariant violation in any state at depth ≤ D".
+>
+> **3. State bound N (N ≥ 1).** States are inserted normally until N distinct
+> states exist. When an (N+1)-th distinct state would be inserted, it is
+> counted in `CutOff`, it is not inserted or checked, and the run stops
+> immediately with status `Bounded`. This also applies to initial states. If
+> the frontier empties without this happening, including when the model has
+> exactly N reachable states, the status is `Exhausted`. The claim covers the
+> N discovered states. Under BFS these are all states at depth < d plus some
+> states at depth d, and the report states d.
+>
+> **Precedence.** A violation among *inserted* states always wins, so the
+> status is `Violation`. Cut-off states are never checked, so a violation
+> beyond a bound yields `Bounded`, never `Violation`.
+
+Statistics: add `CutOff`, which counts **transitions** refused by a bound,
+not distinct states. Two cut-off transitions may reach the same state, as in
+Grid2 below. The identity in SEMANTICS.md §10 becomes:
+`transitions = (discovered − |distinct init|) + duplicates + cutoff`.
+
+### Why (b) is sound
+
+BFS discovers every depth-D state before expanding any depth-D state. So when
+a depth-D state is expanded, every state at depth ≤ D is already in the
+visited set. A successor that is not in the set therefore has true BFS depth
+exactly D + 1. Each cut-off is a real, reachable state that was not
+explored, which is exactly the evidence `Bounded` requires. If no cut-off
+occurs, every successor of every reachable state at depth ≤ D was already
+visited, so the visited set is closed under `Next`. It therefore equals the
+whole reachable set, and `Exhausted` is correct.
+
+### Time, memory, and cancellation (clarification, same principle)
+
+These limits are checked before the next state is dequeued. If the frontier
+is already empty, the run is `Exhausted`, whatever the clock says. If they
+fire while the frontier is non-empty, the status is `Incomplete`. In that
+case the engine has **not** shown that unexplored states remain: the
+remaining frontier states might have only duplicate successors. `Incomplete`
+means "not established", not "known to be partial". This matches the existing
+SEMANTICS.md §8 rows. It is stated here so that implementations do not try to
+upgrade `Incomplete` to `Bounded`.
+
+### Boundary cases and expected outcomes
+
+Grid2 (SEMANTICS.md §6, maximum depth 4, 9 states):
+
+| Config | Status | Disc. | Exp. | Tr | Dup | CutOff | Why |
+|---|---|---:|---:|---:|---:|---:|---|
+| depth 3 | `Bounded` | 8 | 8 | 12 | 3 | 2 | (2,1)→(2,2) and (1,2)→(2,2): one state, two cut-off transitions |
+| depth 4 | `Exhausted` | 9 | 9 | 12 | 4 | 0 | (2,2) is expanded and has no successors |
+| states 9 | `Exhausted` | 9 | 9 | 12 | 4 | 0 | the bound equals the reachable count |
+| states 8 | `Bounded` | 8 | 7 | 11 | 3 | 1 | (2,2) would be the 9th state, refused while expanding (2,1) |
+
+Water jugs: cases J3–J14 in [CONFORMANCE.md](CONFORMANCE.md). They include
+depth 0, depth = max depth, depth beyond max depth, state bound = reachable
+count, and violations just beyond each kind of bound.
+
+### Consequences if accepted
+
+- **Correctness:** `Bounded` is never reported spuriously. A bound that turns
+  out not to matter yields the stronger, true `Exhausted`.
+- **Cost:** at most one extra BFS level of `Next` calls and key lookups (no
+  insertions) under a depth bound. A state bound adds nothing.
+- **Implementation:** one comparison per discovery (depth or count), one new
+  counter, and one status rule. The state bound stops inside an expansion
+  (as violations already do), so SEMANTICS.md §8's sentence "limits are
+  checked between state expansions" must be narrowed to time, memory, and
+  cancellation.
+- **Edits required on acceptance:** SEMANTICS.md §8 rules 2–3, the Grid2
+  bound example, and §10; ARCHITECTURE.md §3.9; TESTING.md §7.
+
+### Validation
+
+Conformance tests J3–J14 and the Grid2 table above. In random-graph
+differential tests, use bounds equal to the reference explorer's maximum
+depth and to its exact state count, and check for `Exhausted`.

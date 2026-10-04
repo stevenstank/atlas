@@ -14,8 +14,8 @@ dependency needs a justification ([CONTRIBUTING.md](../CONTRIBUTING.md)).
 
 Every semantic test compares against one of these independent oracles:
 
-1. **Hand-worked expectations**: `Grid2` (SEMANTICS.md §6) and water jugs
-   (ROADMAP.md Phase 0).
+1. **Hand-worked expectations**: `Grid2` (SEMANTICS.md §6) and water jugs,
+   both collected in [CONFORMANCE.md](CONFORMANCE.md).
 2. **Analytic counts**: `GridN` with D dimensions of size K has `K^D` states.
    The 8-puzzle has 181,440 reachable states (9!/2).
 3. **The reference explorer**: a deliberately naive implementation in a
@@ -94,8 +94,10 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
 | Scenario                                  | Expected status | Extra checks |
 |-------------------------------------------|-----------------|--------------|
 | Depth bound below the model's max depth   | `Bounded`       | claim names depth D; discovered set = reference states at depth ≤ D |
-| Depth bound ≥ the model's max depth       | `Exhausted` (pending D-012) | identical to unbounded run |
+| Depth bound ≥ the model's max depth       | `Exhausted` *(requires D-012)* | identical to unbounded run |
 | State bound N below the reachable count   | `Bounded`       | exactly N discovered; the report states the complete depth |
+| State bound N = the reachable count       | `Exhausted` *(requires D-012)* | identical to unbounded run |
+| Violation just beyond a depth or state bound | `Bounded` *(requires D-012)* | the violating state is never checked ([CONFORMANCE.md](CONFORMANCE.md) J8, J13) |
 | Timeout on a large model                  | `Incomplete`    | returns within timeout + slack |
 | Canceled context (before start, mid-run)  | `Incomplete`    | partial stats consistent |
 | Memory limit on a large model             | `Incomplete`    | reason = MemoryLimit |
@@ -103,7 +105,10 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
 | Infinite model, no bounds, with timeout   | `Incomplete`    | never `Exhausted` |
 
 A dedicated test enumerates every `StopReason` and asserts that none of them
-leads to `Exhausted`.
+leads to `Exhausted`. Under the D-012 proposal, a depth or state bound that
+refuses no successor is not a stop reason at all: the run simply exhausts.
+Exact expected values for the bound cases are in
+[CONFORMANCE.md](CONFORMANCE.md).
 
 ## 8. Property-based tests
 
