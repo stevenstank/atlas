@@ -8,7 +8,7 @@ import (
 
 func TestAtCapacity(t *testing.T) {
 	for _, c := range []struct {
-		n    int
+		n    uint64
 		want bool
 	}{{0, false}, {core.MaxStoreLen - 1, false}, {core.MaxStoreLen, true}} {
 		if got := atCapacity(c.n); got != c.want {

@@ -338,7 +338,7 @@ documents:
 
 - the SEMANTICS.md §8 Grid2 example (bound 4 ⇒ `Exhausted`) assumes depth-D
   states *are* expanded;
-- ARCHITECTURE.md §3.9 says "don't expand states at depth = D" (now marked superseded by D-012);
+- ARCHITECTURE.md §3.9 said "don't expand states at depth = D" (since rewritten);
 - rule 3 (state bound N) does not say what happens when the model has exactly
   N reachable states.
 
@@ -679,9 +679,9 @@ were verified with a throwaway script that implements the check order above.
   rule. The state limit stops inside an expansion, as violations already do,
   so SEMANTICS.md §8's sentence "limits are checked between state expansions"
   must be narrowed to time, memory, and cancellation.
-- **Edits required on acceptance** (2026-10-04: the pending-decision markers
-  now point to D-012 as normative; folding the rule text into SEMANTICS.md
-  §8 and §10, and ARCHITECTURE.md §2, is still outstanding): SEMANTICS.md §8 rules 2–3, its status
+- **Edits required on acceptance** (done: markers updated 2026-10-04; rule
+  text folded into SEMANTICS.md §8 and §10 and ARCHITECTURE.md §2 and §3.9 on
+  2026-10-05): SEMANTICS.md §8 rules 2–3, its status
   table row for `Bounded`, its Grid2 bound example, and §10 (new counters,
   identities I1–I4, and replacing "repeated `Init` entries are ignored" with
   `InitDuplicates`); ARCHITECTURE.md §2 (the data flow: initial duplicates

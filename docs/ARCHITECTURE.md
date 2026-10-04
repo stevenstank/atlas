@@ -36,21 +36,31 @@
 
 ## 2. Data flow (model checking, BFS)
 
-```
-Init ──► for each s0: key=Key(s0) ─► visited.Insert(key) ─new─► check invariants ─► frontier.Push
-                                                    └─dup─► ignore
+Accepted rules: SEMANTICS.md §8 and DECISIONS.md D-012. Implemented in
+`check/run.go`.
 
-loop until frontier empty / limit / violation:
+```
+check interruptions (C0) ─fires─► Incomplete, Init not called
+Init(emit) ── for each emission s0 (depth 0):
+     key = AppendKey(s0)
+     admitted? ─yes─► InitDuplicates++
+     N admitted? ─yes─► refusal (init phase) ─► emit returns false ─► Bounded
+     admit; check invariants ─fail─► emit returns false ─► Violation (trace)
+     frontier.Push
+no initial emission ─► ModelError (no initial states)
+
+loop while frontier not empty:
+   before dequeues 1, 1+K, …: check interruptions ─fires─► Incomplete
    (id, s) = frontier.Pop()
    Next(s, emit) ── for each (action, t) in order:
-        stats.transitions++
-        key = Key(t)
-        visited.Insert(key, parent=id, edge=ordinal) ─dup─► stats.duplicates++
-                                                     └new─► check invariants(t)
-                                                              ├ fail ─► stop, build trace(newID)
-                                                              └ ok ───► frontier.Push(newID, t)
+        key = AppendKey(t)
+        admitted?            ─yes─► Duplicates++
+        depth(id)+1 > D?     ─yes─► CutoffTransitions++   (not admitted)
+        N admitted?          ─yes─► refusal (expansion) ─► Bounded
+        admit(parent=id, edge=ordinal); check invariants ─fail─► Violation (trace)
+        frontier.Push
+frontier empty ─► Bounded (DepthLimit) if any cutoff, else Exhausted
 ```
-
 ## 3. Components
 
 ### 3.1 Model contract
@@ -219,8 +229,8 @@ Limits:
 
 | Limit         | Mechanism                             | Exactness |
 |---------------|---------------------------------------|-----------|
-| Depth bound   | don't expand states at depth = D *(superseded by D-012: depth-D states are checked and expanded; unseen D+1 successors are refused as `CutoffTransitions`)* | exact |
-| State bound   | stop after N discoveries *(superseded by D-012: N includes the initial state; stop only when an unseen in-depth state would exceed N. The depth check runs before the state check.)* | exact |
+| Depth bound   | depth-D states are checked and expanded; unseen D+1 successors are refused (`CutoffTransitions`) | exact |
+| State bound   | N includes initial states; stop when an unseen in-depth state would exceed N (checked after depth) | exact |
 | Time limit    | context deadline                      | approximate, checked every K |
 | Memory limit  | `runtime/metrics` heap sample vs. cap | approximate; may overshoot |
 

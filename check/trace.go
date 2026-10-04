@@ -29,7 +29,7 @@ func (e *engine[S, A]) trace(id core.StateID) (Trace[S, A], error) {
 			found bool
 			bad   bool // emitted again after we returned false
 		)
-		take := func(a A, s S) bool {
+		pick := func(a A, s S) bool {
 			if found {
 				bad = true
 				return false
@@ -40,6 +40,15 @@ func (e *engine[S, A]) trace(id core.StateID) (Trace[S, A], error) {
 			}
 			n++
 			return true
+		}
+		// take is engine code called from inside the model. Like emitInit, it
+		// clears inModel and restores it without defer, so an engine panic in
+		// pick is re-raised by run instead of being reported as a ModelError.
+		take := func(a A, s S) bool {
+			e.inModel = false
+			ok := pick(a, s)
+			e.inModel = true
+			return ok
 		}
 		if i == 0 {
 			e.callModel(func() { e.m.Init(func(s S) bool { var zero A; return take(zero, s) }) })

@@ -209,64 +209,81 @@ cannot detect impurity that never shows up along these paths.
 
 ## 8. Bounds, termination, and completion status
 
-> **D-012 accepted (2026-10-04).** [DECISIONS.md](DECISIONS.md) D-012 is
-> normative for depth and state limits, initialization, the interruption
-> schedule, and statistics. It **supersedes** rules 2 and 3 below and the
-> `Bounded` row of the status table: depth-D states are checked and expanded;
-> unseen successors beyond D, or a state that would exceed N, are refused;
-> and `Bounded` requires such a refusal. Where this section differs, D-012
-> governs. Folding its text into this section is outstanding. Expected values
-> are in [CONFORMANCE.md](CONFORMANCE.md).
+Rules from [DECISIONS.md](DECISIONS.md) D-012 (accepted). Expected values for
+every case are in [CONFORMANCE.md](CONFORMANCE.md).
 
 A finite `Reach(M)` together with BFS always terminates. Atlas does not require
 `Reach(M)` to be finite, but if it is infinite, the run ends only because of a
-bound or limit.
+limit or an interruption.
 
 Every run ends with exactly one **status**:
 
-| Status        | Meaning                                                             | What it proves |
-|---------------|---------------------------------------------------------------------|----------------|
-| `Violation`   | A reachable state violates an invariant. A trace is attached.       | The model can reach a bad state. The trace is the evidence. |
-| `Exhausted`   | The frontier emptied with no limit reached and no violation.        | **No reachable state violates any invariant.** |
-| `Bounded`     | A depth or state-count bound stopped expansion, with no violation.  | No violation among the states explored, as described by the bound. Nothing about the rest. |
-| `Incomplete`  | Time limit, memory limit, or cancellation, with no violation.       | Nothing beyond "no violation among the states explored". |
-| `ModelError`  | The model panicked, broke a precondition, or was nondeterministic.  | Nothing. |
+| Status        | Meaning | What it proves |
+|---------------|---------|----------------|
+| `Violation`   | An invariant failed in an admitted state. A trace is attached. | The model can reach a bad state. The trace is the evidence. |
+| `Exhausted`   | The frontier emptied, nothing was refused, and no violation was found. | **No reachable state violates any invariant.** |
+| `Bounded`     | The frontier emptied after at least one depth cutoff, or the run stopped at a state-limit refusal. No violation in any admitted state. | No violation among the admitted states, as the claim states. Nothing about excluded states. |
+| `Incomplete`  | Interrupted (cancellation, deadline, memory, capacity) before any of the above. | Nothing conclusive. |
+| `ModelError`  | The model panicked, broke the `emit` contract, was nondeterministic on replay, or emitted no initial states. | Nothing. |
+
+Invalid configuration (for example N = 0 or D < 0) is rejected before `Init`
+runs. It is a caller error, reported separately from these five statuses.
 
 Rules:
 
 1. **Only `Exhausted` is a verification result.** Reports, exit codes, and APIs
    must make it impossible to confuse `Bounded` or `Incomplete` with
-   `Exhausted`. For example, a future CLI must use distinct exit codes, and the
-   result type must not offer a single `OK bool` field.
-2. **Depth bound D.** *(Superseded by D-012; see the note at the top of §8.)* States at depth D are discovered and checked but not
-   expanded. If no state at depth D has any successor, then nothing was cut
-   off and the status is `Exhausted`. Otherwise it is `Bounded`, with the
-   precise claim: "no violation in any state at depth ≤ D". This claim is
-   exact, because BFS fully enumerates every depth up to the bound.
-3. **State-count bound N.** Discovery stops after N distinct states. The status
-   is `Bounded`. The claim covers only the states discovered. Under BFS this
-   is all states at depth < d for some d, plus some of the states at depth d.
-   The report includes d.
-4. **Time and memory limits** are best-effort. Go cannot hard-cap the heap, so
-   Atlas samples memory use periodically and stops when it is over the limit.
-   It may overshoot between samples. These runs report `Incomplete`.
-5. **Cancellation** (`context.Context`) is checked at least once every K state
-   expansions, with K a small constant. The run returns `Incomplete` with the
-   partial statistics.
-6. If a violation is found before any limit is reached, the status is
-   `Violation`, whatever limits were configured.
+   `Exhausted`. The result type offers no single `OK bool` field.
+2. **Admission and check order.** Initial states have depth 0, and a
+   successor of a state at depth d has depth d + 1. Each emission is handled
+   in this order:
+   1. already admitted → duplicate;
+   2. depth > D → **cutoff**: not admitted, not checked, counted, and
+      exploration continues;
+   3. N states already admitted → **state-limit refusal**: not admitted, not
+      checked, and the run stops with `Bounded`;
+   4. otherwise it is admitted and its invariants are checked; a failure
+      stops the run with `Violation`.
 
-Limits are checked between state expansions, so one call to `Next` always
-completes once it has started. *(Superseded by accepted D-001 option 3b and
-D-012: on a violation or state-limit refusal, `emit` returns `false` and a
-conforming model returns early. Interruptions are still never observed
-inside a call.)*
+   `Init` emissions follow the same order; the depth check never fires for
+   them. A refusal records its phase: initialization or expansion.
+3. **Depth limit D (D ≥ 0)** is the maximum depth of admitted states. States
+   at depth D are checked *and expanded*, so that cutoffs can be detected. If
+   the frontier empties with at least one cutoff, the run is `Bounded`, and
+   the claim is exact: "no violation in any state at depth ≤ D". With no
+   cutoff it is `Exhausted`, even if some state lies exactly at depth D.
+4. **State limit N (N ≥ 1)** counts every admitted state, including initial
+   states. Admitting the N-th state does not by itself make the run
+   `Bounded`. Only an unseen state that would be the (N+1)-th does. If the
+   model has exactly N reachable states, the run is `Exhausted`. The claim
+   covers the N admitted states, which include every state shallower than
+   the refused one.
+5. **Empty `Init`.** If `Init` emits nothing, the run is `ModelError` ("no
+   initial states"), never a vacuous `Exhausted`.
+6. **Violations.** A violation in an admitted state ends the run at once with
+   `Violation`. A violating state that was cut off, refused, or never reached
+   was never checked and is never reported.
+7. **Interruptions** (cancellation, deadline, `MaxHeapBytes`) are observed
+   only at scheduled checks:
+   - once before `Init` (if it fires, `Init` never runs and every count is 0);
+   - then before dequeues 1, 1+K, 1+2K, …, where K is the check interval.
 
-*Example.* Run `Grid2` without its invariant and with depth bound 3. The
-states at depth ≤ 3 are discovered and checked (8 states). `(2,1)` and `(1,2)`
-at depth 3 have unexpanded successors, so the status is `Bounded` with "no
-violation at depth ≤ 3". With depth bound 4 the frontier empties, and since
-`(2,2)` has no successors, the status is `Exhausted`.
+   They are never observed inside `Init` or `Next`, and there is no check
+   once the frontier is empty, so an empty frontier always completes
+   normally. A depth cutoff is not terminal: a run interrupted after a
+   cutoff is `Incomplete`, not `Bounded`. Memory checks are best-effort,
+   because Go cannot hard-cap the heap, and the heap may overshoot between
+   checks.
+8. **Stopping a model call.** On a violation, a state-limit refusal, or a
+   detected contract violation, `emit` returns `false`, and a conforming
+   model returns at once (D-001). Duplicates and cutoffs return `true`.
+
+*Example.* Run `Grid2` without its invariant, with depth limit 3. The 8
+states at depth ≤ 3 are admitted, checked, and expanded. `(2,1)→(2,2)` and
+`(1,2)→(2,2)` are two cutoffs, so the run is `Bounded` with "no violation at
+depth ≤ 3". With depth limit 4, `(2,2)` is admitted and expanded, it has no
+successors, nothing is cut off, and the run is `Exhausted` (CONFORMANCE.md
+G2, G3).
 
 ## 9. What an exhaustive run proves, and what it does not
 
@@ -297,28 +314,36 @@ trace is usually a precise lead.
 
 ## 10. Reported statistics
 
-> *D-012 (accepted)* adds `CutoffTransitions`, `StateLimitRefusals`, and
-> initialization counters (`InitEmissions`, `InitAdmitted`,
-> `InitDuplicates`). It replaces the identity at the end of this section with
-> identities I1–I4, each valid only under stated preconditions. See
-> [DECISIONS.md](DECISIONS.md) D-012.
+Every result reports, whatever its status (`check.Stats`):
 
-Every result reports, whatever its status:
-
-- `StatesDiscovered`: distinct keys added to the visited set;
-- `StatesExpanded`: states for which `Next` was called;
-- `TransitionsExamined`: all `(a, t)` pairs returned by `Next`;
-- `Duplicates`: transitions whose target was already visited;
-- `TerminalStates`: expanded states with empty `Next`;
-- `MaxDepth`: greatest depth discovered;
+- `InitEmissions`, `InitAdmitted`, `InitDuplicates`: initial emissions
+  examined, distinct initial states admitted, and repeated initial states;
+- `Admitted`: all admitted states;
+- `Expanded`: states whose `Next` was called, including a partial expansion
+  ended by a violation or refusal;
+- `Transitions`: successor emissions examined;
+- `Duplicates`: transitions to an already admitted state;
+- `CutoffTransitions`: transitions refused by the depth limit (each
+  transition counts, even when two lead to the same state);
+- `StateLimitRefusals` (0 or 1) and `RefusalPhase`;
+- `TerminalStates`: expanded states whose `Next` emitted nothing;
+- `MaxDepth`: greatest admitted depth, or −1 if nothing was admitted;
 - `FrontierPeak`: largest frontier size;
-- `WallTime`, plus heap and allocation figures from `runtime/metrics` where
-  available. These last are informational and outside the determinism
-  contract.
+- `WallTime`: informational, outside the determinism contract.
 
-Invariant: `TransitionsExamined = (StatesDiscovered − |Init distinct|) + Duplicates`
-for runs that end normally. Repeated entries in `Init` are ignored and are not
-counted as `Duplicates`. When a run stops partway through expanding a
-state, for example at a violation or a state-count bound, the transitions not
-yet examined from that state are simply not counted, and the equation still
-holds. Tests check this invariant.
+**Counting rule.** An emission is counted only when it is assigned to exactly
+one branch: duplicate, cutoff, refusal, or admitted. An emission that fails
+earlier (a panic in `AppendKey`, a detected `emit` misuse) is not counted.
+Emissions after the run ends are not counted either.
+
+**Identities.** `R_init` and `R_exp` are the refusal count for each phase.
+
+| # | Identity | Holds on |
+|---|----------|----------|
+| I1 | `InitEmissions = InitAdmitted + InitDuplicates + R_init` | every run, except one with an undetected `emit` contract violation |
+| I2 | `Transitions = (Admitted − InitAdmitted) + Duplicates + CutoffTransitions + R_exp` | the same runs as I1 |
+| I3 | `Admitted` = number of reachable states, and `Transitions` = number of `(action, successor)` pairs over all reachable states | `Exhausted` runs only |
+| I4 | `Transitions` = Σ over admitted states of their successor counts | normal completion only: `Exhausted`, or `Bounded` with `DepthLimit` |
+
+Tests assert each identity only under its precondition
+([TESTING.md](TESTING.md) §6).
