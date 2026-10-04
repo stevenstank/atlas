@@ -91,13 +91,32 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
 
 ## 7. Bounds, limits, and cancellation
 
+### Depth and state limits (proposed D-012 semantics)
+
+The rows marked *(D-012)* follow the **Proposed** semantics in
+[DECISIONS.md](DECISIONS.md) D-012. They become binding only if D-012 is
+accepted. Each named test checks every column in the referenced
+[CONFORMANCE.md](CONFORMANCE.md) row, including `CutoffTransitions` and the
+statistics identity.
+
+| Test | Scenario | Expected status | Cases |
+|------|----------|-----------------|-------|
+| `TestDepthLimitAllSuccessorsSeen` | Depth limit where every successor of the boundary states is already discovered | `Exhausted` *(D-012)* | water jugs J6; Grid2 depth 4 |
+| `TestDepthLimitUnseenSuccessor` | Depth limit with an unseen successor beyond it | `Bounded` *(D-012)* | J3, J4, J5; Grid2 depth 3 |
+| `TestDepthLimitAboveMaxDepth` | Depth limit greater than the maximum depth | `Exhausted` | J7 |
+| `TestStateLimitEqualsReachable` | State limit exactly equal to the reachable count | `Exhausted` *(D-012)* | J12; Grid2 states 9 |
+| `TestStateLimitExcludesState` | State limit that excludes another reachable state | `Bounded` *(D-012)* | J10, J11; Grid2 states 8 |
+| `TestViolationBeyondBoundNotFound` | A violation exists only beyond a depth or state limit | `Bounded`, never `Violation` *(D-012)* | J8, J13 |
+| `TestViolationWithinBound` | A violation within the limits | `Violation`, same trace as unbounded | J9, J14 |
+
+Additional checks for depth limits: the discovered set equals the reference
+explorer's states at depth ≤ D, and the claim names D. For state limits:
+exactly N states are discovered, and the report states the complete depth d.
+
+### Other limits
+
 | Scenario                                  | Expected status | Extra checks |
 |-------------------------------------------|-----------------|--------------|
-| Depth bound below the model's max depth   | `Bounded`       | claim names depth D; discovered set = reference states at depth ≤ D |
-| Depth bound ≥ the model's max depth       | `Exhausted` *(requires D-012)* | identical to unbounded run |
-| State bound N below the reachable count   | `Bounded`       | exactly N discovered; the report states the complete depth |
-| State bound N = the reachable count       | `Exhausted` *(requires D-012)* | identical to unbounded run |
-| Violation just beyond a depth or state bound | `Bounded` *(requires D-012)* | the violating state is never checked ([CONFORMANCE.md](CONFORMANCE.md) J8, J13) |
 | Timeout on a large model                  | `Incomplete`    | returns within timeout + slack |
 | Canceled context (before start, mid-run)  | `Incomplete`    | partial stats consistent |
 | Memory limit on a large model             | `Incomplete`    | reason = MemoryLimit |
@@ -105,10 +124,8 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
 | Infinite model, no bounds, with timeout   | `Incomplete`    | never `Exhausted` |
 
 A dedicated test enumerates every `StopReason` and asserts that none of them
-leads to `Exhausted`. Under the D-012 proposal, a depth or state bound that
+leads to `Exhausted`. Under the D-012 proposal, a depth or state limit that
 refuses no successor is not a stop reason at all: the run simply exhausts.
-Exact expected values for the bound cases are in
-[CONFORMANCE.md](CONFORMANCE.md).
 
 ## 8. Property-based tests
 

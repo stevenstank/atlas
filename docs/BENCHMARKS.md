@@ -49,7 +49,7 @@ version, and results are compared only within the same version.
 | B1  | `Grid2`                       | fixed                   | `Exhausted`, 9 states, 12 transitions| fixed overhead |
 | B2  | `GridN`                       | D=4, K ∈ {10,20,40}     | `Exhausted`, K^D states              | per-state cost, tiny states, scaling |
 | B3  | 8-puzzle                      | fixed                   | `Exhausted`, 181,440 states          | moderate branching, small keys |
-| B4  | Water jugs                    | 3 L / 5 L               | `Violation`, trace length 6          | time to first counterexample (micro) |
+| B4  | Water jugs                    | big 5 L, small 3 L      | `Violation`, trace length 6          | time to first counterexample (micro) |
 | B5  | Two-phase commit              | N RMs ∈ {3,4,5,6}       | `Exhausted`, count from Phase 2 record | protocol-shaped workload |
 | B6  | Message passing (bounded, lossy) | channel cap ∈ {2,3,4} | `Exhausted`, count from Phase 2 record | larger, variable-size states |
 | B7  | Task queue, broken variant    | workers/tasks scaled    | `Violation`, trace length from Phase 2 record | deep counterexample in a large space |

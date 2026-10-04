@@ -26,7 +26,7 @@ are not listed.
 | D-005 | Store `(parent, edge ordinal)` per state; rebuild traces by replaying `Next`. | About 8 B/state. Replay also detects nondeterminism. | Store `(parent, action)`; store full states. | Trace building costs extra `Next` calls. Requires deterministic models, which D-006 requires anyway. |
 | D-006 | Pure model + same config + single-threaded BFS ⇒ identical verdict, trace, and counted stats. Order comes only from `Init`/`Next`. | Reproducible bugs and regression tests; replay depends on it. | Weaker contract (verdict only); seeded randomized order. | Constrains parallelism (D-008) and any randomized data structure. Timing-cut runs are excluded from the contract. |
 | D-011 | Module `github.com/stevenstank/atlas` (**assumes** that GitHub location); `go 1.26`; packages `core`, `check`, `models`, `internal/bench`. | One module keeps things simple. The directive matches the tested toolchain. | Another host or path; a lower directive such as `go 1.23` for wider compatibility. | The path is costly to change after imports exist. The directive sets the minimum Go version for every user. |
-| D-012 | Expand states at the depth limit; refuse new successors as `CutOff`. A state bound stops only at the (N+1)-th new state. `Bounded` requires a refused state. | `Bounded` is never spurious; bounds that don't matter yield `Exhausted`; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); insert depth D+1 without expanding; stop at the N-th state. | One extra BFS level of `Next` calls under a depth bound. New `CutOff` statistic. SEMANTICS/ARCHITECTURE/TESTING edits needed on acceptance. |
+| D-012 | Depth limit D = maximum admitted depth. Depth-D states are expanded; unseen successors are refused as `CutoffTransitions`. A state limit N counts the initial state and stops only when an unseen state would exceed N. `Bounded` only if something was refused; violations beyond a bound are not reported as found; cancel/timeout/resources ⇒ `Incomplete`. | `Bounded` is never spurious; limits that don't matter yield `Exhausted`; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); admit depth D+1 without expanding; stop at the N-th state. | One extra BFS level of `Next` calls under a depth limit. New `CutoffTransitions` statistic. SEMANTICS/ARCHITECTURE/TESTING edits on acceptance. |
 
 ---
 
@@ -278,106 +278,117 @@ documents:
 
 ### Guiding principle
 
-**`Bounded` must be backed by evidence.** A run is reported `Bounded` only if
-the engine has generated a concrete successor that is reachable and not in
-the visited set, and that it refused to insert because of the bound. Hitting
-a limit is not, by itself, proof that unexplored states remain. Conversely, a
-run is `Exhausted` only when the frontier is empty and no successor was ever
-refused.
+**`Bounded` must be backed by evidence.** A run is `Bounded` only if the
+engine generated at least one successor that is reachable and previously
+unseen, and refused it because of a limit. Reaching a limit is not, by
+itself, proof that unexplored states remain.
 
 ### Options considered
 
 | | Depth-D states | Successors beyond the bound | Bound equal to the true size | Cost |
 |---|---|---|---|---|
 | (a) | not expanded | never generated | `Bounded` (cannot know otherwise) | none |
-| **(b)** | **expanded** | **generated and looked up; new ones counted as `CutOff`, not inserted** | **`Exhausted`** | one extra level of `Next` + key lookups |
-| (c) | expanded | new ones inserted and checked, not expanded | `Exhausted` | the claim becomes "≤ D, plus some of D+1", which is confusing |
+| **(b)** | **expanded** | **looked up; unseen ones refused and counted as `CutoffTransitions`** | **`Exhausted`** | one extra level of `Next` + key lookups |
+| (c) | expanded | unseen ones admitted and checked, not expanded | `Exhausted` | the claim becomes "≤ D, plus some of D+1", which is confusing |
 
-For the state bound: (i) stop as soon as the N-th state is inserted and report
-`Bounded`, or **(ii) stop when an (N+1)-th new state would be inserted.**
+State bound: (i) stop as soon as the N-th state is admitted and report
+`Bounded`, or **(ii) stop only when an unseen state would exceed N.**
 
-### Proposed rules (replacement text for SEMANTICS.md §8 rules 2–3, not yet applied)
+Proposed: **(b) + (ii)**.
 
-> **2. Depth bound D (D ≥ 0).** States at depth ≤ D are discovered and checked
-> against the invariants. States at depth D **are expanded**. Each successor
-> is looked up in the visited set. Duplicates are counted as usual. A
-> successor that is not in the visited set is counted in `CutOff`. It is
-> **not** inserted, not checked against invariants, and not enqueued.
-> Exploration continues until the frontier is empty. If `CutOff = 0`, the
-> status is `Exhausted`. Otherwise it is `Bounded`, with the claim "no
-> invariant violation in any state at depth ≤ D".
+### Proposed semantics (replacement text for SEMANTICS.md §8 rules 2–3, not yet applied)
+
+> **Depth limit D (D ≥ 0).**
+> 1. D is the maximum depth of states that may be admitted to the visited
+>    set and checked against the invariants.
+> 2. States at depth D are expanded, to detect their successors.
+> 3. A successor that was already discovered is counted as a duplicate, as
+>    usual.
+> 4. A previously unseen successor of a depth-D state lies beyond the limit.
+>    It is not admitted, not checked, and not enqueued. Each such transition
+>    counts as one `CutoffTransition`.
+> 5. After every boundary state has been examined (the frontier is empty),
+>    the result is `Bounded` if `CutoffTransitions > 0` and `Exhausted`
+>    otherwise.
 >
-> **3. State bound N (N ≥ 1).** States are inserted normally until N distinct
-> states exist. When an (N+1)-th distinct state would be inserted, it is
-> counted in `CutOff`, it is not inserted or checked, and the run stops
-> immediately with status `Bounded`. This also applies to initial states. If
-> the frontier empties without this happening, including when the model has
-> exactly N reachable states, the status is `Exhausted`. The claim covers the
-> N discovered states. Under BFS these are all states at depth < d plus some
-> states at depth d, and the report states d.
+> **State limit N (N ≥ 1).**
+> 1. N counts every admitted state, including initial states.
+> 2. When a previously unseen state would make the count N + 1, it is not
+>    admitted or checked. It counts as one `CutoffTransition`, and the run
+>    returns `Bounded` immediately.
+> 3. Reaching exactly N states does not by itself imply `Bounded`. If the
+>    frontier then empties without another unseen state appearing, the result
+>    is `Exhausted`.
 >
-> **Precedence.** A violation among *inserted* states always wins, so the
-> status is `Violation`. Cut-off states are never checked, so a violation
-> beyond a bound yields `Bounded`, never `Violation`.
+> **Violations.** A violation in an admitted state, that is, within the
+> explored bounds, returns `Violation`. A violating state beyond a bound is
+> never admitted or checked, so it is not reported as found, and the run
+> returns `Bounded`.
+>
+> **Cancellation, timeout, resource exhaustion.** If one of these stops the
+> run before it can reach a conclusion (the frontier is non-empty and no
+> violation was found), the result is `Incomplete`. It does not claim that
+> unexplored states exist, only that the question was not settled. These
+> limits are checked before the next state is dequeued. If the frontier is
+> already empty, the run is `Exhausted` or `Bounded` under the rules above.
+>
+> **Claims.** A `Bounded` run caused by a depth limit claims "no invariant
+> violation in any state at depth ≤ D". A `Bounded` run caused by a state
+> limit claims "no violation among the N admitted states" and reports the
+> depth d below which BFS was complete.
 
-Statistics: add `CutOff`, which counts **transitions** refused by a bound,
-not distinct states. Two cut-off transitions may reach the same state, as in
-Grid2 below. The identity in SEMANTICS.md §10 becomes:
-`transitions = (discovered − |distinct init|) + duplicates + cutoff`.
+**Statistic.** Add `CutoffTransitions`, which counts *transitions* refused by
+a limit, not distinct states. Two refused transitions may lead to the same
+state (Grid2 depth 3 below). The identity in SEMANTICS.md §10 becomes:
+`transitions = (discovered − |distinct init|) + duplicates + cutoffTransitions`.
 
 ### Why (b) is sound
 
-BFS discovers every depth-D state before expanding any depth-D state. So when
-a depth-D state is expanded, every state at depth ≤ D is already in the
-visited set. A successor that is not in the set therefore has true BFS depth
-exactly D + 1. Each cut-off is a real, reachable state that was not
-explored, which is exactly the evidence `Bounded` requires. If no cut-off
-occurs, every successor of every reachable state at depth ≤ D was already
-visited, so the visited set is closed under `Next`. It therefore equals the
-whole reachable set, and `Exhausted` is correct.
-
-### Time, memory, and cancellation (clarification, same principle)
-
-These limits are checked before the next state is dequeued. If the frontier
-is already empty, the run is `Exhausted`, whatever the clock says. If they
-fire while the frontier is non-empty, the status is `Incomplete`. In that
-case the engine has **not** shown that unexplored states remain: the
-remaining frontier states might have only duplicate successors. `Incomplete`
-means "not established", not "known to be partial". This matches the existing
-SEMANTICS.md §8 rows. It is stated here so that implementations do not try to
-upgrade `Incomplete` to `Bounded`.
+BFS admits every depth-D state before expanding any depth-D state. So when a
+depth-D state is expanded, every state at depth ≤ D is already in the
+visited set, and a successor that is not in the set has true BFS depth
+exactly D + 1. Each cutoff transition therefore points at a real, reachable,
+unexplored state, which is the evidence `Bounded` requires. If no cutoff
+occurs, every successor of every admitted state was already admitted. The
+visited set is then closed under `Next`, so it equals the whole reachable
+set, and `Exhausted` is correct.
 
 ### Boundary cases and expected outcomes
 
-Grid2 (SEMANTICS.md §6, maximum depth 4, 9 states):
+Grid2 (SEMANTICS.md §6, maximum depth 4, 9 states). All rows were verified
+with a throwaway script:
 
-| Config | Status | Disc. | Exp. | Tr | Dup | CutOff | Why |
+| Config | Status | Disc. | Exp. | Tr | Dup | Cutoff | Why |
 |---|---|---:|---:|---:|---:|---:|---|
-| depth 3 | `Bounded` | 8 | 8 | 12 | 3 | 2 | (2,1)→(2,2) and (1,2)→(2,2): one state, two cut-off transitions |
+| depth 3 | `Bounded` | 8 | 8 | 12 | 3 | 2 | (2,1)→(2,2) and (1,2)→(2,2): one state, two cutoff transitions |
 | depth 4 | `Exhausted` | 9 | 9 | 12 | 4 | 0 | (2,2) is expanded and has no successors |
-| states 9 | `Exhausted` | 9 | 9 | 12 | 4 | 0 | the bound equals the reachable count |
+| states 9 | `Exhausted` | 9 | 9 | 12 | 4 | 0 | the limit equals the reachable count |
 | states 8 | `Bounded` | 8 | 7 | 11 | 3 | 1 | (2,2) would be the 9th state, refused while expanding (2,1) |
 
-Water jugs: cases J3–J14 in [CONFORMANCE.md](CONFORMANCE.md). They include
-depth 0, depth = max depth, depth beyond max depth, state bound = reachable
-count, and violations just beyond each kind of bound.
+Water jugs: J3–J14 in [CONFORMANCE.md](CONFORMANCE.md). They include every
+required boundary case: a depth limit where every successor is already seen,
+a depth limit with an unseen successor, a state limit equal to the reachable
+count, a state limit that excludes a reachable state, and violations that
+exist only beyond a bound.
 
 ### Consequences if accepted
 
-- **Correctness:** `Bounded` is never reported spuriously. A bound that turns
+- **Correctness:** `Bounded` is never reported spuriously. A limit that turns
   out not to matter yields the stronger, true `Exhausted`.
 - **Cost:** at most one extra BFS level of `Next` calls and key lookups (no
-  insertions) under a depth bound. A state bound adds nothing.
-- **Implementation:** one comparison per discovery (depth or count), one new
-  counter, and one status rule. The state bound stops inside an expansion
-  (as violations already do), so SEMANTICS.md §8's sentence "limits are
-  checked between state expansions" must be narrowed to time, memory, and
+  insertions) under a depth limit. A state limit adds nothing.
+- **Implementation:** one depth or count comparison per unseen successor, one
+  new counter, and one status rule. The state limit stops inside an
+  expansion, as violations already do, so SEMANTICS.md §8's sentence "limits
+  are checked between state expansions" must be narrowed to time, memory, and
   cancellation.
-- **Edits required on acceptance:** SEMANTICS.md §8 rules 2–3, the Grid2
-  bound example, and §10; ARCHITECTURE.md §3.9; TESTING.md §7.
+- **Edits required on acceptance:** SEMANTICS.md §8 rules 2–3, its Grid2
+  bound example, and §10; ARCHITECTURE.md §3.9; and removing the "requires
+  D-012" markers from TESTING.md §7 and CONFORMANCE.md.
 
 ### Validation
 
-Conformance tests J3–J14 and the Grid2 table above. In random-graph
-differential tests, use bounds equal to the reference explorer's maximum
-depth and to its exact state count, and check for `Exhausted`.
+CONFORMANCE.md J3–J14, the Grid2 table above, and the named tests in
+TESTING.md §7. In random-graph differential tests, use limits equal to the
+reference explorer's maximum depth and to its exact state count, and check
+that the result is `Exhausted`.
