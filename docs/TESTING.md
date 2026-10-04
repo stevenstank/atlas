@@ -98,8 +98,10 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
     "Statistics and accounting identities"):
     - **I1** `InitEmissions == InitAdmitted + InitDuplicates + R_init` and
       **I2** `Transitions == (Admitted − InitAdmitted) + Duplicates +
-      CutoffTransitions + R_exp` hold on **every** run, because they count
-      only examined emissions.
+      CutoffTransitions + R_exp` hold on every run **without an undetected
+      callback-contract violation**, including `ModelError` runs. This
+      follows from the D-012 counting rule: an emission is counted only when
+      it is assigned to exactly one branch.
     - **I3** (Admitted and Transitions equal the reference explorer's
       reachable count and edge count) holds **only** for `Exhausted`.
     - **I4** (Transitions equals the sum of successor counts over admitted
@@ -140,6 +142,10 @@ only under their preconditions (§6).
 | `TestMultipleInitialStates` | Several initial emissions with a duplicate; violation in an initial state | `Exhausted`; `Violation` with 0-step trace | M1, M2, M9 |
 | `TestStateLimitDuringInit` | N reached while `Init` is still emitting | `Bounded` (state, init phase); later emissions not examined; violation among them not reported | M3, M4, M5 |
 | `TestStateLimitMultiInit` | Limits with multiple initial states, refused in expansion or at depth 0 | as listed | M6, M7, M8 |
+| `TestEmptyInit` | `Init` emits nothing, with or without limits | `ModelError`, every count 0, never `Exhausted` | E1, E2 |
+| `TestCancelDuringInit` | Cancellation requested from inside `Init`, K = 1 | observed before dequeue 1. `Incomplete` with the counts from initialization, unless initialization already ended the run | multi-init model with no limit (expected IE 5, IA 4, ID 1) |
+| `TestModelErrorCounting` | Panic in `AppendKey` on the k-th successor emission | `ModelError`; that emission is uncounted; I1 and I2 hold | any reference model with an injected panic |
+| `TestCallbackContract` *(depends on D-001)* | 3b: emit after `false`, and emit on a retained callback after return. 4: yield after `false`. 3a: emissions after a terminal condition | 3b: `ModelError` (same-goroutine after `false`: guaranteed; retained callback: best effort). 4: `ModelError` via gc detection, checked on the pinned toolchain. 3a: discarded and uncounted | written once D-001 is decided |
 
 Additional checks: under a depth limit, the admitted set equals the
 reference explorer's states at depth ≤ D. Under a state limit, the admitted

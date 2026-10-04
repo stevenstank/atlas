@@ -72,13 +72,14 @@ rebuilds counterexamples by replaying the model. Details and alternatives:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/DECISIONS.md](docs/DECISIONS.md).
 
-A *proposed* model shape, not an existing API. It may change, and the callback
-signature is still an open choice in D-001:
+A *proposed* model shape, not an existing API. The signature shown is the one
+D-001 recommends (option 3b), which is not yet approved. `emit` returns
+`false` when the model should stop emitting:
 
 ```go
 type Model[S any, A any] interface {
-    Init(emit func(S))
-    Next(s S, emit func(A, S))
+    Init(emit func(S) bool)
+    Next(s S, emit func(A, S) bool)
     AppendKey(buf []byte, s S) []byte
 }
 ```

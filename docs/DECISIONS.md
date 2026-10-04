@@ -19,7 +19,7 @@ are not listed.
 
 | ID | Proposed decision | Rationale | Alternatives considered | Key consequences |
 |----|-------------------|-----------|-------------------------|------------------|
-| D-001 | `Model[S, A]` with `Init`, `Next`, `AppendKey(buf, s)`, using a push-style API. **Open choice:** 3a `emit func(A, S)`, 3b `emit func(A, S) bool`, or 4 `iter.Seq2[A, S]`. Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state. 3b and 4 also let the engine stop a model early and detect emissions after a stop. | `Next(s) []S`; `Actions` + `NextState` (Stateright). | 3a cannot stop the model mid-emission, so work is wasted. 3b and 4 put a stop obligation on every model. Models must copy before mutating. |
+| D-001 | `Model[S, A]` with `Init`, `Next`, `AppendKey(buf, s)`, using a push-style API. **Recommended: 3b** `emit func(A, S) bool` (alternatives: 3a `emit func(A, S)`, 4 `iter.Seq2[A, S]`); awaiting owner approval. Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state. 3b and 4 also let the engine stop a model early and detect emissions after a stop. | `Next(s) []S`; `Actions` + `NextState` (Stateright). | 3a can never interrupt a model's `Init`/`Next` call: work is wasted, and an endlessly emitting call hangs the run. 3b and 4 rely on models honoring the stop; 4's misuse detection is gc behavior, not spec. 3b and 4 put a stop obligation on every model. Models must copy before mutating. |
 | D-002 | Identity = exact canonical byte key. No fingerprint-only mode in Phases 1–4. | Exact verdicts. Hash collisions cannot cause missed states. Works for any state shape. | `S comparable` with `map[S]ID`; 64-bit fingerprints (TLC-style). | Cost of encoding every successor. The model author must make the key injective and canonical. Helper encoders are needed. |
 | D-003 | Baseline: `map[string]StateID` + `parent`/`edge`/`depth` slices + FIFO of `(ID, S)`. Optimized layout deferred. | Simplest correct design, using the map's built-in collision handling. Measure before redesigning. | Arena + open addressing; packed fixed-width keys; frontier stores IDs and decodes. | Higher memory per state and GC pressure, both known up front. Phase 4 may replace it, behind the same semantics. |
 | D-004 | Single-threaded BFS only in Phase 1. DFS later, only if measured to be needed. | BFS alone guarantees shortest traces. | DFS; iterative deepening; random simulation. | Wide models may exhaust memory in the frontier. |
@@ -30,7 +30,7 @@ are not listed.
 
 ---
 
-## D-001 Model interface and state ownership — Proposed
+## D-001 Model interface and state ownership — Proposed (option 3b recommended; awaiting owner approval)
 
 **Context.** The interface determines how easy models are to write, how much
 the engine allocates, and whether traces carry readable action labels.
@@ -41,41 +41,93 @@ the engine allocates, and whether traces carry readable action labels.
 2. `Actions(s) []A` + `NextState(s, a) S`, as in Stateright: readable labels,
    but two calls and a slice per state.
 3. **Push callback.** Action labels, no slice per state. Two variants:
-   - **3a** `Next(s S, emit func(A, S))`. The engine **cannot** signal the
-     model to stop. When a violation or a limit ends the run partway through
-     a state's successors, the engine discards the remaining emissions
-     uncounted, and the model still computes them. Semantics are unaffected,
-     but the work is wasted, and nothing can detect a model that ignores
-     termination, because there is no signal to ignore.
-   - **3b** `Next(s S, emit func(A, S) bool)`. Contract:
+   - **3a** `Next(s S, emit func(A, S))`, `Init(emit func(S))`. The engine
+     **cannot interrupt** a synchronous `Init` or `Next` call partway through
+     its emissions. When a violation, a state-limit refusal, or a detected
+     model error ends the run, the engine discards the remaining emissions,
+     uncounted, until the call returns. Consequences:
+     - the state limit still bounds what is *admitted*, but not how long the
+       call runs;
+     - cancellation is not observed until the call returns;
+     - an `Init` or `Next` that emits without end never returns, so the run
+       hangs whatever N, the time limit, or cancellation says;
+     - a model cannot ignore a stop signal, because there is none, so there
+       is nothing to detect.
+   - **3b** `Next(s S, emit func(A, S) bool)`, `Init(emit func(S) bool)`. The
+     contract is common to both:
      - `true` means continue. `false` means normal early termination, not an
-       error: the model must stop emitting and return from `Next` (or `Init`)
-       immediately.
+       error. The model must make no further `emit` calls and must return
+       promptly. Computing without emitting is legal but wasted.
      - `false` never means "skip this successor and continue".
-     - If the model emits again after receiving `false`, the engine detects
-       it (it tracks that it returned `false`) and reports `ModelError`.
-     - Positions of earlier steps are unaffected, so trace replay (D-005)
-       still works.
-     - `Init` uses the same contract.
-     - The cost is one `if !emit(...) { return }` per emission in model code.
-4. **Iterator.** `Next(s S) iter.Seq2[A, S]` (and `Init` as `iter.Seq[S]`).
-   Gives the same stop semantics as 3b: `yield` returns `false`, and the Go
-   runtime panics if an iterator yields after that (range-over-func), which
-   the engine would recover as `ModelError`. It needs `go` ≥ 1.23, which is
-   compatible with D-011's proposed `go 1.26`. It feels idiomatic, but each
-   call may allocate a closure; this is unmeasured.
+     - The engine returns `false` only when the run is ending: the emission
+       produced a violation, a state-limit refusal, or a detected contract
+       violation. Duplicates and depth cutoffs return `true`.
+     - **Validate, then count.** On each `emit` call the engine first checks
+       the contract (the call is inside the active `Init`/`Next` and no
+       `false` was returned yet). Only a valid emission can be counted (D-012
+       "Counting rule"). An invalid one is never counted, and the run ends
+       with `ModelError`.
+     - **Synchronous and confined.** `emit` may be called only synchronously,
+       from the goroutine running `Init`/`Next`, during that call.
+       - *Guaranteed detection:* a same-goroutine call after `false` within
+         that call → `ModelError`.
+       - *Best effort:* the engine invalidates each callback when the call
+         returns, so a later call on a retained callback is reported as
+         `ModelError` if the run is still in progress and the call is
+         observed.
+       - *Undefined:* a call from another goroutine, or after the run has
+         finished. Results of such a run carry no guarantee.
+     - Earlier steps keep their positions, so replay (D-005) is unaffected.
+4. **Iterator.** `Next(s S) iter.Seq2[A, S]`, `Init() iter.Seq[S]`. The engine
+   consumes with `for … range` and stops by leaving the loop, which makes
+   `yield` return `false`. Two kinds of guarantee apply:
+   - *Language guarantee* (Go spec, range over functions, verified in the
+     go1.26.1 spec text): after `false`, yield "must not be called again".
+     The spec does **not** say what happens if it is.
+   - *Toolchain behavior, not a spec guarantee:* gc go1.26.1 raises a
+     recoverable run-time panic on a yield after `false`, and on a yield
+     after the loop has exited. This was observed in a scratch program on
+     2026-10-04 and not tested for concurrent calls. If the engine relies on
+     it to report `ModelError`, that is gc-specific detection, re-checked
+     when the `go` directive changes.
 
-**Recommendation.** A push-style API (option 3a, 3b, or 4) rather than 1 or 2,
-with generic `Model[S, A any]` and `AppendKey(buf, s) []byte`
-(ARCHITECTURE.md §3.1). Emitted states are immutable and owned by the engine.
-**The choice among 3a, 3b, and 4 is open and is the owner's.** Bound and
-initialization semantics (D-012) are the same for all three. Only the
-handling of emissions after termination differs (D-012, Initialization rule
-7).
+   Counting, confinement, and the reasons the engine stops match 3b, but the
+   engine never sees an emission it could validate before the language does.
+   It needs `go` ≥ 1.23, which is compatible with D-011's proposed `go 1.26`.
+   It feels idiomatic, but each call may allocate a closure; this is
+   unmeasured.
 
-**Trade-offs.** 3a is the simplest for model authors but cannot stop work
-early. 3b and 4 can stop early and detect contract violations, but every
-model must honor the stop signal. Callbacks and iterators are less familiar
+**Recommendation (recorded 2026-10-04; not yet approved by the owner).**
+**Option 3b:** `Init(emit func(S) bool)` and `Next(s S, emit func(A, S) bool)`,
+with the contract given under 3b above, generic `Model[S, A any]`, and
+`AppendKey(buf, s) []byte` (ARCHITECTURE.md §3.1). Emitted states are
+immutable and owned by the engine. Reasons:
+- **Over 3a:** the engine can ask a cooperating model to stop at a violation
+  or a state-limit refusal, so wasted work is bounded. A same-goroutine
+  emission after `false` is detected reliably.
+- **Over 4:** misuse detection is the engine's own check, not gc runtime
+  behavior that the language spec does not guarantee. There is also no open
+  question about per-call closure allocation.
+
+What 3b does **not** do: it cannot interrupt model code that never returns,
+or that ignores `false` (keeps computing, or emits again from another
+goroutine where detection is not guaranteed). Such code still hangs or wastes
+the run, as under every option.
+
+This stays **Proposed** until the owner explicitly approves it. Bound and
+initialization semantics (D-012) are the same under all three options. Only
+the handling of emissions after termination differs (D-012, Initialization
+rule 7).
+
+**Trade-offs.** 3a is the simplest for model authors, but it can never
+interrupt a model's call (see the consequences above). 3b and 4 let a
+cooperating model stop early, and they detect some contract violations, but
+every model must honor the stop signal. 4's detection relies on gc behavior,
+not the language spec.
+**Effect on current text:** SEMANTICS.md §8 says one call to `Next` "always
+completes once it has started". That is true under 3a, but under 3b or 4 a
+violation or refusal ends the call early. Update that sentence when D-001 is
+decided. Callbacks and iterators are less familiar
 to new Go users than returned slices. Generics rule out mixing different
 model types behind one interface value, which no current requirement needs.
 
@@ -123,7 +175,7 @@ slices, and a FIFO of `(ID, S)`. Defer the optimized design until Phase 3
 profiles exist.
 
 **Trade-offs.** The baseline puts GC pressure on string pointers and uses more
-memory per state than custom tables. It is accepted for simplicity and
+memory per state than custom tables. That cost is taken on for simplicity and
 correctness.
 
 **Validation.** The Phase 3 baseline measurements, and Phase 4 A/B tests on
@@ -286,7 +338,7 @@ documents:
 
 - the SEMANTICS.md §8 Grid2 example (bound 4 ⇒ `Exhausted`) assumes depth-D
   states *are* expanded;
-- ARCHITECTURE.md §3.9 said "don't expand states at depth = D";
+- ARCHITECTURE.md §3.9 says "don't expand states at depth = D" (now marked pending D-012);
 - rule 3 (state bound N) does not say what happens when the model has exactly
   N reachable states.
 
@@ -435,21 +487,32 @@ repeats. Proposed rules:
    initial set may be only partly examined. Emissions after that point are
    **not examined and not counted**. A `Bounded` claim then covers only the
    admitted initial states. A `Violation` stands as proven regardless.
-6. **Interruptions.** Cancellation is checked once before `Init` is called.
-   If it fires there, the run is `Incomplete` with every count at 0. It is
-   not checked again until the first dequeue, so `Init` itself is not
-   interruptible. That is acceptable for Phase 1 and would need revisiting
-   for very large initial sets.
-7. **Stopping the model's `Init` call depends on D-001.**
-   - Option 3a (`emit func(A,S)`): the engine cannot stop `Init`. It discards
-     further emissions without examining or counting them.
-   - Option 3b (`emit … bool`): the engine returns `false`. An emission after
-     that is a contract violation and yields `ModelError`.
-   - Option 4 (`iter.Seq2`): the Go runtime itself panics if an iterator
-     yields after `yield` returned `false` (range-over-func, Go 1.23+). The
-     engine recovers and reports `ModelError`.
-
-   Rules 1–6 do not depend on which option is chosen.
+6. **Interruptions.** Follow the schedule in "Interruption check schedule"
+   below. `Init` is not interrupted. A cancellation requested during `Init`
+   is observed at the first check after `Init` returns, unless initialization
+   already ended the run (violation, refusal, empty initial set, or model
+   error). This is acceptable for Phase 1 and would need revisiting for very
+   large initial sets.
+7. **How the model's `Init` call stops after a violation or refusal depends
+   on D-001.** Under 3a, `Init` keeps running and the engine discards its
+   remaining emissions uncounted. Under 3b, the engine returns `false` and
+   the model must return. Under 4, the engine leaves its `range` loop. A
+   later emission is handled as described in D-001 for each option. Rules
+   1–6 and 8 do not depend on the choice.
+8. **Empty initial set.** If `Init` returns having emitted nothing
+   (`InitEmissions = 0`), the run ends with **`ModelError`** ("no initial
+   states"). The model contract requires at least one initial state.
+   - *Why not `Exhausted`:* it would "prove" every invariant over zero
+     states, which is vacuously true and almost always a modeling or
+     parameter mistake, and it would print like a verification.
+   - *Why not invalid configuration:* emptiness is a property of the model's
+     behavior, observed only at run time, not of the caller's limits.
+   - *Alternative, not proposed:* `Exhausted` with 0 admitted states, for
+     anyone who wants vacuous runs to be legal.
+   - The check runs as soon as `Init` returns, before the first dequeue
+     check, so it takes precedence over a cancellation requested during
+     `Init`. A cancellation observed *before* `Init` gives `Incomplete`, and
+     `Init` is never called. See CONFORMANCE.md E1–E2.
 
 ### Statistics and accounting identities
 
@@ -466,19 +529,34 @@ Proposed counters. Every one counts only what the engine **observed**:
 | `CutoffTransitions` | Examined successor transitions refused by the depth limit |
 | `StateLimitRefusals` | 0 or 1, with its phase (initialization or expansion) |
 
-Emissions the engine never examined are outside the observable contract and
-appear in no counter. That covers emissions after a terminal condition, and
-emissions the model never made because it stopped early. Under option 3a the
-engine physically receives such emissions but discards them uncounted.
+**Counting rule.** An emission is **examined**, and counted in
+`InitEmissions` or `Transitions`, at the moment the engine assigns it to
+exactly one branch: duplicate, depth cutoff, state-limit refusal, or admit.
+The branch counter is incremented in the same step. Nothing is counted
+before that. Therefore:
+- an emission that fails before a branch is assigned is **never counted**.
+  Examples: a contract violation detected on receipt (D-001 3b), or a panic
+  in `AppendKey` while computing its key. The run ends with `ModelError`;
+- an admitted state is counted **before** its invariants run. A violation,
+  or a panic inside an invariant (`ModelError`), leaves it counted as
+  admitted;
+- emissions the engine never received (the model stopped early) or
+  discarded after a terminal condition (3a) are not examined and appear in
+  no counter.
+
+These counters are maintained only by engine code, so the rule holds on
+every run, including `ModelError` runs, with one exception: a contract
+violation that is **undetected** (D-001: an `emit` from another goroutine, or
+after the run ended) makes that run's results undefined, counters included.
 
 **Identities and their preconditions.** Let `R_init` and `R_exp` be 1 if the
 refusal happened in that phase, else 0.
 
 | # | Identity | Valid when |
 |---|----------|------------|
-| I1 | `InitEmissions = InitAdmitted + InitDuplicates + R_init` | every run that called `Init`. Each examined emission takes exactly one branch. |
-| I2 | `Transitions = (Admitted − InitAdmitted) + Duplicates + CutoffTransitions + R_exp` | every run. Each examined transition takes exactly one branch; the violating transition is counted as admitted. Unexamined emissions are excluded on both sides. |
-| I3 | `Admitted` = the reachable count, and `Transitions` = the total number of edges in the reachable graph | only `Exhausted` runs, where every admitted state was fully expanded and nothing was refused. |
+| I1 | `InitEmissions = InitAdmitted + InitDuplicates + R_init` | every run without an undetected contract violation, including `ModelError` runs, by the counting rule. Runs canceled before `Init` and empty-`Init` runs hold trivially (0 = 0). |
+| I2 | `Transitions = (Admitted − InitAdmitted) + Duplicates + CutoffTransitions + R_exp` | same as I1. Each counted transition took exactly one branch; the violating transition is counted as admitted; uncounted emissions are excluded on both sides. |
+| I3 | `Admitted` = the number of reachable states, and `Transitions` = the number of `(action, successor)` pairs emitted by `Next` summed over all reachable states. Every emitted pair counts, even when distinct actions lead to the same successor; this is not the number of distinct destination states. | only `Exhausted` runs, where every admitted state was fully expanded and nothing was refused. |
 | I4 | `Transitions` = Σ over admitted states of the number of their successors | runs that ended **normally**: `Exhausted`, or `Bounded` (`DepthLimit`). Not after a violation, a state-limit refusal, an interruption, or a model error, where the last expansion may be partial and the frontier unexpanded. |
 
 The current normative identity (SEMANTICS.md §10) is I2 with no cutoff or
@@ -506,7 +584,7 @@ not only what was observed along the way.
 | `Bounded` | Either (a) exploration **ended normally** with `CutoffTransitions ≥ 1`, or (b) it ended at a **state-limit refusal**, with no violation in any admitted state. Reason: `DepthLimit` for (a), `StateLimit` for (b). | At least one reachable state was excluded by a configured limit. No admitted state violates an invariant. Nothing about excluded states. |
 | `Incomplete` | Exploration was **interrupted** before normal completion and before any terminal condition (state-limit refusal, violation, model error): cancellation, timeout, resource exhaustion, or another interruption. | Nothing conclusive. No claim that excluded states exist, nor that none do. |
 | `Violation` | An invariant failed in an **admitted and checked** state, before any other terminal condition ended the run. | The model can reach a violating state. The trace is the evidence. |
-| `ModelError` | The model panicked or broke the model contract, for example nondeterminism detected on replay, or mutation of an emitted state. | Nothing. |
+| `ModelError` | The model panicked or broke the model contract, for example nondeterminism detected on replay, mutation of an emitted state, an empty initial set (Initialization rule 8), or a detected callback-contract violation (D-001). | Nothing. |
 
 **Precedence.** The first terminal condition reached decides the outcome:
 
@@ -527,8 +605,32 @@ not only what was observed along the way.
   completeness and for future search orders.)
 - **A model error** returns `ModelError`. If it is detected while building a
   trace after a violation, it replaces `Violation`.
-- **Interruptions** are checked before the next state is dequeued. If the
-  frontier is already empty at that point, the run has completed normally.
+- **Interruptions** are observed only at the scheduled checks (next
+  subsection).
+
+### Interruption check schedule (proposed)
+
+Cancellation, timeout, and resource limits are all observed only at these
+points:
+
+1. **C0, once before `Init` is called.** If it fires, the result is
+   `Incomplete` with every count 0, and `Init` is never called.
+2. **Before dequeues 1, 1+K, 1+2K, …**, where dequeues are numbered from 1
+   and K ≥ 1 is the configured interval (ARCHITECTURE.md §3.9). If it fires,
+   the result is `Incomplete`, with the counts observed so far.
+3. **No check without a dequeue.** If the frontier is empty, no dequeue
+   happens and therefore no check. The run has completed normally
+   (`Exhausted` or `Bounded`), even if cancellation was requested earlier
+   (CONFORMANCE.md J20).
+4. **Never inside `Init` or `Next`.** A request made during either call is
+   observed at the next scheduled check after the call returns, unless the
+   run ends first. With K > 1, a request may wait up to K − 1 further
+   expansions.
+
+J19 and J20 use K = 1, so a check precedes every dequeue. J19's request
+(after expansion 11) is observed before dequeue 12 with `(0,1)` still queued,
+giving `Incomplete`. J20's request (after expansion 12) meets an empty
+frontier, giving normal completion.
 
 **A proven violation and an inconclusive run are different results.**
 `Violation` is reported only for a state the engine admitted and checked. A
@@ -580,7 +682,9 @@ were verified with a throwaway script that implements the check order above.
 - **Edits required on acceptance:** SEMANTICS.md §8 rules 2–3, its status
   table row for `Bounded`, its Grid2 bound example, and §10 (new counters,
   identities I1–I4, and replacing "repeated `Init` entries are ignored" with
-  `InitDuplicates`); ARCHITECTURE.md §3.9; and removing the pending-decision
+  `InitDuplicates`); ARCHITECTURE.md §2 (the data flow: initial duplicates
+  counted, the depth and state checks, cutoffs, the empty-`Init` check) and
+  §3.9 (the check schedule); and removing the pending-decision
   notes ("Pending decision", "pending D-012", "*(D-012)*") from SEMANTICS.md,
   ARCHITECTURE.md, TESTING.md §6–§7, and CONFORMANCE.md.
 

@@ -259,7 +259,10 @@ Rules:
    `Violation`, whatever limits were configured.
 
 Limits are checked between state expansions, so one call to `Next` always
-completes once it has started.
+completes once it has started. *(This sentence depends on D-001 and D-012:
+it stays true under callback option 3a, but under 3b or 4 a violation or
+state-limit refusal ends the call early. It is to be revised when those
+decisions are made.)*
 
 *Example.* Run `Grid2` without its invariant and with depth bound 3. The
 states at depth ≤ 3 are discovered and checked (8 states). `(2,1)` and `(1,2)`

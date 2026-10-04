@@ -65,14 +65,18 @@ These definitions refine SEMANTICS.md §10 for this document.
 | **Max depth** | The largest BFS depth among admitted states. A state's BFS depth is the length of its shortest path from the initial state. |
 
 **Identities and when they hold** (D-012 I1–I4):
-- **I2, every run.** `Transitions = (Admitted − InitAdmitted) + Duplicates +
-  CutoffTransitions + R_exp`. Every *examined* transition takes exactly one
-  branch: newly admitted, duplicate, depth cutoff, or expansion-phase
-  state-limit refusal. Here `InitAdmitted = 1` and `R_exp =
+- **I2, every run without an undetected callback-contract violation**
+  (D-012 counting rule). `Transitions = (Admitted − InitAdmitted) +
+  Duplicates + CutoffTransitions + R_exp`. A transition is counted only when
+  it is assigned to exactly one branch: newly admitted, duplicate, depth
+  cutoff, or expansion-phase state-limit refusal. Here `InitAdmitted = 1` and `R_exp =
   StateLimitRefusals`, because no refusal can happen during initialization
   with a single initial state and N ≥ 1. This is checked on every row below.
-- **I3, `Exhausted` runs only.** For water jugs, Admitted = 16 and
-  Transitions = 58 (the full graph). For Grid2, 9 and 12.
+- **I3, `Exhausted` runs only.** Admitted = the number of reachable states,
+  and Transitions = the number of emitted `(action, successor)` pairs over
+  all reachable states. Every pair counts, even when two actions lead to the
+  same state. For water jugs, Admitted = 16 and Transitions = 58. For Grid2,
+  9 and 12.
 - **I4, normal completion only** (`Exhausted`, or `Bounded` with
   `DepthLimit`). Transitions equals the sum of successor counts over admitted
   states. It does **not** hold for J2 (stopped mid-expansion by a violation),
@@ -237,6 +241,20 @@ I1 (`IE = IA + ID + R_init`) and I2 hold on every M row. In M3, for example,
 `StateLimitRefusals` in the initialization phase, and the unexamined fifth
 emission appears nowhere.
 
+**Empty initialization** (Initialization rule 8, proposed). Model `Empty`:
+`Init` emits nothing, `Next` is never called, and the invariant is
+`Never: false`, which fails on every state. A check before `Init` is
+assumed not to fire.
+
+| Test | D | N | Invariant | Expected outcome | IE | IA | ID | Adm. | Exp. | Tr | Dup | Cut | SLR | Notes |
+|------|--:|--:|-----------|------------------|---:|---:|---:|-----:|-----:|---:|----:|----:|----:|-------|
+| E1 | — | — | `Never` | `ModelError` (no initial states) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | not `Exhausted`; no violation reported, because no state was admitted |
+| E2 | 0 | 1 | `Never` | `ModelError` (no initial states) | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | 0 | limits are irrelevant; not `Bounded` |
+
+I1 and I2 hold trivially (0 = 0). I3 and I4 do not apply, because the run did
+not end normally. Max depth is undefined (no admitted state) and is reported
+as absent, not 0.
+
 **Required boundary cases** (TESTING.md §7):
 
 | Case | Tests |
@@ -253,6 +271,7 @@ emission appears nowhere.
 | Multiple initial states, duplicates, violation at initialization | M1, M2, M9 |
 | State limit reached during initialization ⇒ `Bounded`, incomplete initial set | M3, M4, M5 |
 | State limit equal to the reachable count with multiple initial states | M8 |
+| Empty initial set ⇒ `ModelError`, not `Exhausted` or `Bounded` | E1, E2 |
 
 > **Revision note.** In the previous version, J10, J11, and J13 showed
 > `CutOff = 1`. D-012 now defines `CutoffTransitions` as depth-limit refusals

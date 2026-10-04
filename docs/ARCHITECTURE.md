@@ -57,18 +57,21 @@ loop until frontier empty / limit / violation:
 
 **Responsibility:** user code that defines the state space (SEMANTICS.md §1).
 
-Recommended shape (D-001). The callback signature is **open**: 3a
-`emit func(...)` as shown, 3b `emit func(...) bool`, or 4 `iter.Seq2`. See
-D-001.
+Shape recommended in D-001: **option 3b**. It is still Proposed and awaits
+owner approval. The alternatives (3a with no `bool`, and 4 with `iter.Seq2`)
+are described in D-001.
 
 ```go
-// Proposed (option 3a shown). S is the state type, A the action label type.
+// Proposed (D-001 option 3b, recommended). S is the state type, A the action label type.
 type Model[S any, A any] interface {
-    // Init emits initial states in a deterministic order.
-    Init(emit func(S))
-    // Next emits (action, successor) pairs for s in a deterministic order.
-    // It must not mutate s or retain emitted states for mutation.
-    Next(s S, emit func(A, S))
+    // Init emits initial states in a deterministic order. If emit returns
+    // false, Init must make no further emit calls and return promptly.
+    Init(emit func(S) bool)
+    // Next emits (action, successor) pairs for s in a deterministic order,
+    // with the same stop rule. emit may be called only synchronously, from
+    // this goroutine, during this call. It must not mutate s or retain
+    // emitted states for mutation.
+    Next(s S, emit func(A, S) bool)
     // AppendKey appends the canonical encoding of s to buf and returns it.
     AppendKey(buf []byte, s S) []byte
 }
@@ -78,12 +81,14 @@ Invariants are passed to the checker, not to the model:
 `check.Invariant[S]{Name string; Holds func(S) bool}`.
 
 **Why callbacks (`emit`) rather than returning slices:** the model does not
-have to allocate a slice for every state. Whether the engine can also make
-the model *stop* partway through a state's successors, at a violation or a
-limit, depends on D-001. With option 3a as shown it cannot: the engine only
-discards the remaining emissions. Options 3b (`emit` returns `bool`) and 4
-(`iter.Seq2`) can. The cost of callbacks is that user code is slightly less
-natural to write.
+have to allocate a slice for every state. Under no option can the engine
+*interrupt* a running `Init` or `Next` call. Whether it can at least *ask* the
+model to stop, at a violation or a limit, depends on D-001. With option 3a as
+shown it cannot ask: the engine only discards the remaining emissions until
+the call returns. Under options 3b (`emit` returns `bool`) and 4
+(`iter.Seq2`), it signals the stop, and a model honoring the contract returns
+promptly. The cost of callbacks is that user code is slightly less natural to
+write.
 
 **Ownership:** once a state is emitted, it belongs to the engine and must not
 be mutated by anyone. States containing slices or maps must be copied by
@@ -203,8 +208,13 @@ Optional progress reporting goes through a callback,
 
 ### 3.9 Cancellation and resource limits
 
-`Run(ctx, model, opts)`. The loop checks `ctx.Err()`, the deadline, and memory
-every K expansions. K is tunable, starts around 1024, and will be measured.
+`Run(ctx, model, opts)`. The engine checks `ctx.Err()`, the deadline, and
+memory at fixed points. *(Pending D-012; proposed schedule in DECISIONS.md
+D-012, "Interruption check schedule".)* The checks happen once before `Init`,
+then before dequeues 1, 1+K, 1+2K, …. They never happen inside `Init` or
+`Next`, and there is no check once the frontier is empty. K is tunable, starts
+around 1024, and will be measured. Tests that need deterministic
+interruption use K = 1.
 Limits:
 
 | Limit         | Mechanism                             | Exactness |
