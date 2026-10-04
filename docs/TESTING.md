@@ -115,6 +115,7 @@ four-way statistics identity.
 | `TestViolationBeyondBoundNotFound` | A violation exists only in omitted states | `Bounded`, **never** `Violation` | J8, J13, J18 |
 | `TestViolationWithinBound` | A violation in an admitted state | `Violation`, same trace as unbounded | J9, J14 |
 | `TestCombinedLimitsCheckOrder` | Both limits set; the depth check precedes the state check | as listed | J15, J16, J17, G6 |
+| `TestInterruptAfterCutoffIsIncomplete` | Cancellation after a depth cutoff but before the frontier empties; and after it empties | J19 `Incomplete` (Cut = 1, never `Bounded`); J20 `Bounded` | J19, J20 |
 
 Additional checks: under a depth limit, the admitted set equals the
 reference explorer's states at depth ≤ D. Under a state limit, the admitted

@@ -26,7 +26,7 @@ are not listed.
 | D-005 | Store `(parent, edge ordinal)` per state; rebuild traces by replaying `Next`. | About 8 B/state. Replay also detects nondeterminism. | Store `(parent, action)`; store full states. | Trace building costs extra `Next` calls. Requires deterministic models, which D-006 requires anyway. |
 | D-006 | Pure model + same config + single-threaded BFS ⇒ identical verdict, trace, and counted stats. Order comes only from `Init`/`Next`. | Reproducible bugs and regression tests; replay depends on it. | Weaker contract (verdict only); seeded randomized order. | Constrains parallelism (D-008) and any randomized data structure. Timing-cut runs are excluded from the contract. |
 | D-011 | Module `github.com/stevenstank/atlas` (**assumes** that GitHub location); `go 1.26`; packages `core`, `check`, `models`, `internal/bench`. | One module keeps things simple. The directive matches the tested toolchain. | Another host or path; a lower directive such as `go 1.23` for wider compatibility. | The path is costly to change after imports exist. The directive sets the minimum Go version for every user. |
-| D-012 | Depth limit D = maximum admitted depth. Depth-D states are checked and expanded; unseen successors at D+1 are refused as `CutoffTransitions`. State limit N includes the initial state; only an unseen in-depth state that would exceed N ends the run (`StateLimitRefusals = 1`). Check order: duplicate → depth → state → admit and check. `Bounded` only with evidence of an omitted state; a violation in an admitted state wins; omitted violations are never reported. | `Bounded` is never spurious; limits that don't matter yield `Exhausted`; deterministic with both limits; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); admit D+1 without expanding; end at the N-th state; state check before depth check. | One extra BFS level of `Next` calls under a depth limit. Two new statistics. SEMANTICS/ARCHITECTURE/TESTING edits on acceptance. |
+| D-012 | Depth limit D = maximum admitted depth. Depth-D states are checked and expanded; unseen successors at D+1 are refused as `CutoffTransitions`. State limit N includes the initial state; only an unseen in-depth state that would exceed N ends the run (`StateLimitRefusals = 1`). Check order: duplicate → depth → state → admit and check. `Bounded` only after normal completion with ≥ 1 cutoff, or at a state-limit refusal; interruption after a cutoff ⇒ `Incomplete`; `Violation` only for admitted, checked states. One limit reason per run is derived under FIFO BFS, not assumed. | `Bounded` is never spurious; limits that don't matter yield `Exhausted`; deterministic with both limits; fixes a rule that cannot be implemented. | Don't expand depth-D states (always `Bounded`); admit D+1 without expanding; end at the N-th state; state check before depth check. | One extra BFS level of `Next` calls under a depth limit. Two new statistics. SEMANTICS/ARCHITECTURE/TESTING edits on acceptance. |
 
 ---
 
@@ -340,30 +340,62 @@ the initial state.
 Initial states are subject to the same rule. If `Init` emits more than N
 distinct states, the (N+1)-th one triggers rule 3.
 
-**Check order for each successor (both limits may be set):**
+**Check order for each successor (both limits may be set).** This order is
+the normative rule. Each examined successor takes exactly one branch:
 
 ```
-1. key already admitted?            → Duplicate
-2. depth(successor) > D?            → CutoffTransition (not admitted); continue
-3. admitted count == N?             → StateLimitRefusal; stop with Bounded
-4. admit; check invariants          → Violation? stop with Violation
+1. already admitted?                        → Duplicate
+2. else: depth(successor) > D?              → refuse; CutoffTransitions += 1; continue
+3. else: admitted count == N?               → refuse; StateLimitRefusals = 1; stop with Bounded
+4. else: admit; check invariants            → violation? stop with Violation
 5. enqueue
 ```
 
 *Why depth comes before the state limit.* A successor beyond D could never be
-admitted, whatever the value of N. Counting it against N would end the run
-early, skip in-bound exploration that is still permitted, and attribute the
-result to the wrong limit. With this order, the state limit fires only for
-states that the depth limit would have admitted. The order is fixed, and
-emission order is deterministic (D-006), so combined-limit runs are
-reproducible.
+admitted, whatever the value of N. Checking depth first means the state limit
+only refuses states the depth limit would have admitted, so the limit reason
+and counters describe what actually constrained the run. Under BFS, by the
+time any successor exceeds D, no unseen in-bound state remains (see below).
+So checking the state limit first would not lose any admissions. It would
+lose three things: the remaining depth-D expansions (and their cutoff
+counts), the `DepthLimit` reason, and the exact claim "no violation at depth
+≤ D", which would be replaced by the weaker state-limit claim. The order is
+fixed, and emission order is deterministic (D-006), so combined-limit runs
+are reproducible.
 
-*Consequence under BFS.* Depth cutoffs only arise while expanding depth-D
-states, and BFS admits every in-bound state before expanding any depth-D
-state. A state-limit refusal can therefore only happen *before* the first
-depth cutoff. A single BFS run reports at most one limit reason: `DepthLimit`
-or `StateLimit`. CONFORMANCE.md J15 shows both limits reached at the same
-time, resolved as `DepthLimit`.
+*Both conditions can hold on the same transition.* In CONFORMANCE.md J15
+(D = 6, N = 14), the transition `(4,3) -EmptySmall-> (4,0)` reaches an unseen
+state at depth 7 while exactly 14 states are admitted. The check order, not
+any invariant of the search, decides that it is a depth cutoff.
+
+*At most one limit reason per run: a derived property, not a rule.* It is
+guaranteed when all of the following hold. These are sufficient conditions.
+The derivation below uses all four, but the conclusion would survive the
+opposite check order, because the admitted count cannot change during depth-D
+expansion.
+
+1. **Single-threaded FIFO BFS.** All states at depth ≤ D−1 are expanded
+   before any depth-D state.
+2. **Unit-step depth.** A state's depth is its parent's depth + 1, fixed at
+   first admission. With FIFO this equals the shortest-path length. Atlas
+   has no transition costs (SEMANTICS.md §6).
+3. **The state-limit refusal is terminal.** The run stops at the first
+   refusal.
+4. **The check order above.**
+
+Under these assumptions, a state-limit refusal needs an unseen state at depth
+≤ D. Such states arise only while expanding states at depth ≤ D−1, and all of
+those expansions come before the first depth-D expansion, where the only
+cutoffs can occur. Once depth-D expansion begins, every state at depth ≤ D is
+admitted, so nothing further is admitted: each successor is a duplicate or a
+cutoff. Hence a refusal, if any, comes before every cutoff and ends the run,
+and the two counters are never both non-zero.
+
+DFS, parallel exploration (D-008), or any non-FIFO order breaks assumption 1,
+and both counters could then be non-zero. For any such future mode, this rule
+applies: **the reported reason is the condition that ended the run**. That is
+`StateLimit` if a refusal occurred, because it is terminal, and `DepthLimit`
+otherwise. Both counters are always reported.
 
 **Statistics.** Add `CutoffTransitions` and `StateLimitRefusals` (0 or 1) to
 SEMANTICS.md §10 when this is accepted. The identity becomes:
@@ -372,23 +404,45 @@ SEMANTICS.md §10 when this is accepted. The identity becomes:
 
 ### Run outcomes under this proposal
 
-| Outcome | Meaning |
-|---------|---------|
-| `Exhausted` | The frontier emptied with `CutoffTransitions = 0` and `StateLimitRefusals = 0`, and no violation. The whole reachable state space was explored under the model semantics. |
-| `Bounded` | The engine established that at least one reachable state was omitted because of a configured depth or state limit (`CutoffTransitions ≥ 1` or `StateLimitRefusals = 1`), and no violation was found among admitted states. The reason is `DepthLimit` or `StateLimit`. |
-| `Incomplete` | The run could not reach a conclusion: cancellation, timeout, or resource exhaustion stopped it while the frontier was non-empty. It makes no claim that omitted states exist. These conditions are checked before the next state is dequeued. If the frontier is already empty, the result is `Exhausted` or `Bounded` as above. |
-| `Violation` | An invariant failed in an admitted state. The run stops at once. |
-| `ModelError` | The model panicked or broke the model contract, for example through nondeterminism detected on replay or mutation of an emitted state. |
+Every run ends with exactly one outcome. The question is how the run ended,
+not only what was observed along the way.
 
-**Precedence.**
-- A violation found before any terminating limit returns `Violation`, even if
-  depth cutoffs occurred earlier. The engine does **not** keep exploring after
-  a violation to find out whether the run would also have been `Bounded`.
-- A state-limit refusal ends the run, so no later violation can be found.
-- A violating state that was omitted (cut off or refused) was never checked
-  and is **never reported as found**. Such runs return `Bounded`
-  (CONFORMANCE.md J8, J13, J18).
-- `ModelError` ends the run when it occurs, and replaces any other outcome.
+| Outcome | Meaning | Proves |
+|---------|---------|--------|
+| `Exhausted` | Exploration **ended normally** (the frontier emptied) with `CutoffTransitions = 0`, `StateLimitRefusals = 0`, and no violation. | Every reachable state was admitted and satisfies every invariant. |
+| `Bounded` | Either (a) exploration **ended normally** with `CutoffTransitions ≥ 1`, or (b) it ended at a **state-limit refusal**, with no violation in any admitted state. Reason: `DepthLimit` for (a), `StateLimit` for (b). | At least one reachable state was excluded by a configured limit. No admitted state violates an invariant. Nothing about excluded states. |
+| `Incomplete` | Exploration was **interrupted** before normal completion and before any terminal condition (state-limit refusal, violation, model error): cancellation, timeout, resource exhaustion, or another interruption. | Nothing conclusive. No claim that excluded states exist, nor that none do. |
+| `Violation` | An invariant failed in an **admitted and checked** state, before any other terminal condition ended the run. | The model can reach a violating state. The trace is the evidence. |
+| `ModelError` | The model panicked or broke the model contract, for example nondeterminism detected on replay, or mutation of an emitted state. | Nothing. |
+
+**Precedence.** The first terminal condition reached decides the outcome:
+
+- **Normal completion** happens only when the frontier empties. The result is
+  then `Exhausted` or `Bounded` (a), depending on `CutoffTransitions`.
+- **A depth cutoff is never terminal.** If a cutoff has occurred and the run
+  is then interrupted before normal completion, the result is `Incomplete`,
+  not `Bounded`. The counted cutoffs are reported in the statistics, but the
+  run did not finish checking the admitted frontier, so it cannot support the
+  `DepthLimit` claim "no violation at depth ≤ D".
+- **A state-limit refusal is terminal** and returns `Bounded` (b)
+  immediately. Interruptions are checked only between expansions, so none can
+  intervene once it has happened.
+- **A violation** returns `Violation` immediately. The engine does not keep
+  exploring to find out whether the run would also have been `Bounded`.
+  (Under FIFO BFS, no violation can follow a depth cutoff, because nothing is
+  admitted after depth-D expansion begins. The rule is stated for
+  completeness and for future search orders.)
+- **A model error** returns `ModelError`. If it is detected while building a
+  trace after a violation, it replaces `Violation`.
+- **Interruptions** are checked before the next state is dequeued. If the
+  frontier is already empty at that point, the run has completed normally.
+
+**A proven violation and an inconclusive run are different results.**
+`Violation` is reported only for a state the engine admitted and checked. A
+violating state that was refused (cut off or over the state limit), or never
+reached because of an interruption, was never checked and is **never reported
+as found**. Such runs return `Bounded` or `Incomplete` (CONFORMANCE.md J8,
+J13, J18).
 
 **Why `Bounded` does not prove the absence of violations.** `Bounded` means
 the invariants hold in every admitted state. The omitted states, and every
@@ -416,7 +470,7 @@ whole reachable set, and `Exhausted` is correct.
 ### Boundary cases
 
 Every case, with model, limits, outcome, admitted count, and cutoff count, is
-in [CONFORMANCE.md](CONFORMANCE.md): water jugs J3–J18 and Grid2 G2–G6. All
+in [CONFORMANCE.md](CONFORMANCE.md): water jugs J3–J20 and Grid2 G2–G6. All
 were verified with a throwaway script that implements the check order above.
 
 ### Consequences if accepted

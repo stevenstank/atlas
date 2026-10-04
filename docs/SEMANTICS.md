@@ -213,8 +213,10 @@ cannot detect impurity that never shows up along these paths.
 > the status table, are **not settled**. As written, rule 2 cannot be
 > implemented. [DECISIONS.md](DECISIONS.md) D-012 proposes replacement rules:
 > depth-D states are checked and expanded; unseen successors beyond D, or a
-> state that would exceed N, are refused; and `Bounded` is reported only when
-> such a refusal happened. Until the owner accepts or revises D-012, neither
+> state that would exceed N, are refused. `Bounded` is reported only when
+> such a refusal happened and the run then completed normally, or ended at
+> the state-limit refusal itself. An interruption after a depth cutoff gives
+> `Incomplete`. Until the owner accepts or revises D-012, neither
 > version is normative, and neither may be implemented. Expected values under
 > the proposal are in [CONFORMANCE.md](CONFORMANCE.md).
 

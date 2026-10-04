@@ -153,9 +153,14 @@ It is minimal. The only states with `B = 4` are `(4,3)` at depth 6 and
 > depth D+1 is refused as a `CutoffTransition`. The state limit N includes the
 > initial state, and only an unseen state that would exceed N ends the run.
 > For each successor, the checks run in this order: duplicate, then depth
-> limit, then state limit, then admit and check the invariants.
+> limit, then state limit, then admit and check the invariants. A depth
+> cutoff is not terminal. If the run is interrupted before the frontier
+> empties, the result is `Incomplete` even after cutoffs (J19).
 
-Both models start at `(0,0)`. `—` means no limit. Columns: Adm. = Admitted,
+Both models start at `(0,0)`. `—` means no limit. J19 and J20 need a
+deterministic interruption: the test checks for interruption before every
+dequeue (check interval K = 1, ARCHITECTURE.md §3.9) and requests
+cancellation from a test hook after the stated number of expansions. Columns: Adm. = Admitted,
 Exp. = Expanded, Tr = Transitions, Dup = Duplicates, Cut =
 CutoffTransitions, SLR = StateLimitRefusals.
 
@@ -179,6 +184,8 @@ CutoffTransitions, SLR = StateLimitRefusals.
 | J16 | 6 | 13 | none | `Bounded` (state) | 13 | 12 | 42 | 29 | 0 | 1 | (1,0), at depth 6 within D, would be the 14th state |
 | J17 | 7 | 16 | none | `Exhausted` | 16 | 16 | 58 | 43 | 0 | 0 | both limits equal the true size |
 | J18 | 5 | 12 | `NotFour` | `Bounded` (depth) | 12 | 12 | 42 | 29 | 2 | 0 | violation beyond both limits, not reported |
+| J19 | 5 | — | none | `Incomplete` (canceled) | 12 | 11 | 38 | 26 | 1 | 0 | cancellation requested after the 11th expansion. The cutoff (5,2)→(4,3) has occurred, but (0,1) is still in the frontier, so this is not `Bounded` |
+| J20 | 5 | — | none | `Bounded` (depth) | 12 | 12 | 42 | 29 | 2 | 0 | cancellation requested after the 12th expansion. The frontier is already empty, so the run completed normally; same as J4 |
 
 **Grid2** ([SEMANTICS.md §6](SEMANTICS.md#6-search-order-and-the-shortest-counterexample-guarantee)).
 No invariant, unbounded maximum depth 4, 9 reachable states, 1 dead end
@@ -206,6 +213,8 @@ No invariant, unbounded maximum depth 4, 9 reachable states, 1 dead end
 | Violation only beyond a bound ⇒ `Bounded`, not reported as found | J8, J13, J18 |
 | Violation within the bounds ⇒ `Violation` | J9, J14 |
 | Both limits at once: check order | J15, J16, J17, G6 |
+| Interrupted after a depth cutoff ⇒ `Incomplete`, not `Bounded` | J19 |
+| Interruption requested once the frontier is empty ⇒ normal completion | J20 |
 
 > **Revision note.** In the previous version, J10, J11, and J13 showed
 > `CutOff = 1`. D-012 now defines `CutoffTransitions` as depth-limit refusals
