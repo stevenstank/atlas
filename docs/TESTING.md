@@ -94,7 +94,7 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
     `transitions == discovered − |distinct init| + duplicates`. Assert it
     only on runs with **no depth or state limit configured**. Limited runs
     are not covered until D-012 is decided.
-  - *Proposed D-012 semantics* ([DECISIONS.md](DECISIONS.md) D-012,
+  - *D-012 semantics (accepted)* ([DECISIONS.md](DECISIONS.md) D-012,
     "Statistics and accounting identities"):
     - **I1** `InitEmissions == InitAdmitted + InitDuplicates + R_init` and
       **I2** `Transitions == (Admitted − InitAdmitted) + Duplicates +
@@ -113,12 +113,11 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
 
 ## 7. Bounds, limits, and cancellation
 
-### Depth and state limits (proposed D-012 semantics)
+### Depth and state limits (D-012 semantics)
 
-> **Pending decision.** These tests follow the **Proposed** semantics in
-> [DECISIONS.md](DECISIONS.md) D-012, which are not yet accepted. SEMANTICS.md
-> §8 rules 2–3 currently say something different. Phase 1 must not implement
-> bounds until D-012 is decided.
+> **D-012 (accepted 2026-10-04).** These tests follow
+> [DECISIONS.md](DECISIONS.md) D-012, which supersedes SEMANTICS.md §8 rules
+> 2–3.
 
 Each named test runs every listed case from the
 [CONFORMANCE.md](CONFORMANCE.md) bound tables. Each case fixes the model,
@@ -158,7 +157,7 @@ complete depth d.
 |-------------------------------------------|-----------------|--------------|
 | Timeout on a large model                  | `Incomplete`    | returns within timeout + slack |
 | Canceled context (before start, mid-run)  | `Incomplete`    | before start: every count 0 and `Init` not called; mid-run: I1 and I2 hold |
-| Invalid configuration (N = 0, D < 0)      | rejected before `Init`, not `ModelError` *(proposed, D-012)* | no state examined |
+| Invalid configuration (N = 0, D < 0)      | rejected before `Init`, not `ModelError` *(D-012)* | no state examined |
 | Memory limit on a large model             | `Incomplete`    | reason = MemoryLimit |
 | Violation before any limit                | `Violation`     | limits do not mask it |
 | Infinite model, no bounds, with timeout   | `Incomplete`    | never `Exhausted` |

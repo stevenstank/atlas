@@ -5,10 +5,11 @@ explores every reachable state of a bounded, user-defined model, checks safety
 properties, and produces reproducible counterexample traces when a property is
 violated.
 
-> **Status: specification stage (Phase 0).** There is no engine code yet. This
-> repository currently contains design documents only. Nothing below
+> **Status: Phase 1 in progress.** Phase 0 decisions are accepted
+> ([docs/DECISIONS.md](docs/DECISIONS.md)). The core BFS engine is being
+> implemented. It is not yet tested, benchmarked, or released. Nothing below
 > describes working functionality unless it is explicitly marked as
-> implemented, and nothing is marked that way yet.
+> implemented.
 
 ## Why
 
@@ -72,9 +73,8 @@ rebuilds counterexamples by replaying the model. Details and alternatives:
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md),
 [docs/DECISIONS.md](docs/DECISIONS.md).
 
-A *proposed* model shape, not an existing API. The signature shown is the one
-D-001 recommends (option 3b), which is not yet approved. `emit` returns
-`false` when the model should stop emitting:
+The model shape accepted in D-001 (option 3b). `emit` returns `false` when
+the model should stop emitting:
 
 ```go
 type Model[S any, A any] interface {

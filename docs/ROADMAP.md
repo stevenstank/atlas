@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status: plan, not a promise. Current phase: **Phase 0 (in progress)**. No
+> Status: plan, not a promise. Current phase: **Phase 1 (in progress)**; Phase 0 decisions accepted 2026-10-04. No
 > engine code exists.
 
 ## Timeline estimate
@@ -66,7 +66,7 @@ review, test and benchmark methodology, hand-worked examples.
   the water-jug puzzle. The full expansion is in
   [CONFORMANCE.md](CONFORMANCE.md): 16 states, 58 transitions, and a 6-step
   trace.
-- [ ] Owner review: D-001–D-006, D-011 (module path), and D-012 (bound
+- [x] Owner review: D-001–D-006, D-011 (module path), and D-012 (bound
   semantics) accepted or revised
 
 **Exit criteria**

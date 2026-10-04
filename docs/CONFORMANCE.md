@@ -56,11 +56,11 @@ These definitions refine SEMANTICS.md §10 for this document.
 |-----------|--------|
 | **Admitted** (`StatesDiscovered` in SEMANTICS.md §10) | Distinct states admitted to the visited set, including the initial state. Every admitted state is checked against the invariants. |
 | **Expanded** | States for which `Next` was called, including a state whose expansion was stopped partway by a violation or a state limit. |
-| **Init emissions / InitAdmitted / InitDuplicates** | *(D-012, proposed)* Initial-state emissions examined, distinct initial states admitted, and examined emissions of an already admitted initial state. Each water-jug and Grid2 run has 1 / 1 / 0. |
+| **Init emissions / InitAdmitted / InitDuplicates** | *(D-012)* Initial-state emissions examined, distinct initial states admitted, and examined emissions of an already admitted initial state. Each water-jug and Grid2 run has 1 / 1 / 0. |
 | **Transitions** | Every `(action, successor)` pair emitted by `Next` and examined by the engine. Emissions after a terminal condition are not examined and not counted. Only state-changing actions are emitted, so every transition changes the state. |
 | **Duplicates** | Transitions whose successor was already in the visited set. |
-| **CutoffTransitions** | *(D-012, proposed)* Transitions from a depth-D state to a previously unseen state at depth D+1, which is not admitted. Counted per transition, not per omitted state, so two transitions to the same omitted state count twice. Always 0 without a depth limit. |
-| **StateLimitRefusals** | *(D-012, proposed)* 1 if the run ended because a previously unseen state, within the depth limit, would have exceeded the state limit N; otherwise 0. That state is not admitted or checked. The phase (initialization or expansion) is recorded. |
+| **CutoffTransitions** | *(D-012)* Transitions from a depth-D state to a previously unseen state at depth D+1, which is not admitted. Counted per transition, not per omitted state, so two transitions to the same omitted state count twice. Always 0 without a depth limit. |
+| **StateLimitRefusals** | *(D-012)* 1 if the run ended because a previously unseen state, within the depth limit, would have exceeded the state limit N; otherwise 0. That state is not admitted or checked. The phase (initialization or expansion) is recorded. |
 | **Dead ends** | Expanded states whose `Next` emitted nothing (`TerminalStates` in SEMANTICS.md §10). |
 | **Max depth** | The largest BFS depth among admitted states. A state's BFS depth is the length of its shortest path from the initial state. |
 
@@ -158,12 +158,11 @@ partly processed.
 It is minimal. The only states with `B = 4` are `(4,3)` at depth 6 and
 `(4,0)` at depth 7.
 
-### Expected results: bounded runs (proposed D-012 semantics)
+### Expected results: bounded runs (D-012 semantics)
 
-> **Pending decision.** These rows follow the **Proposed** rules in
-> [DECISIONS.md](DECISIONS.md) D-012. They are not binding until D-012 is
-> accepted, and SEMANTICS.md §8 currently describes different rules. In
-> summary: depth-D states are checked and expanded, and an unseen successor at
+> **D-012 (accepted 2026-10-04).** These rows are binding. They follow
+> [DECISIONS.md](DECISIONS.md) D-012, which supersedes SEMANTICS.md §8 rules
+> 2–3. In summary: depth-D states are checked and expanded, and an unseen successor at
 > depth D+1 is refused as a `CutoffTransition`. The state limit N includes the
 > initial state, and only an unseen state that would exceed N ends the run.
 > For each successor, the checks run in this order: duplicate, then depth
@@ -241,7 +240,7 @@ I1 (`IE = IA + ID + R_init`) and I2 hold on every M row. In M3, for example,
 `StateLimitRefusals` in the initialization phase, and the unexamined fifth
 emission appears nowhere.
 
-**Empty initialization** (Initialization rule 8, proposed). Model `Empty`:
+**Empty initialization** (D-012 Initialization rule 8). Model `Empty`:
 `Init` emits nothing, `Next` is never called, and the invariant is
 `Never: false`, which fails on every state. A check before `Init` is
 assumed not to fire.

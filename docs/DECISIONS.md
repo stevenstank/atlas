@@ -7,19 +7,20 @@ Lightweight ADRs. Each record has a status:
 - **Unresolved:** more evidence is needed before deciding.
 - **Superseded:** replaced by a later record (linked).
 
-All records below are **Proposed** or **Unresolved** as of 2026-10-04. None is
-accepted yet. Phase 0 exits when D-001 through D-006, D-011, and D-012 are
-accepted ([ROADMAP.md](ROADMAP.md)).
+On 2026-10-04 the owner explicitly accepted D-001 (option 3b), D-002, D-003
+(baseline layout), D-004, D-005, D-006, D-011, and D-012. That meets the
+Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). The other records keep the
+status shown in their headings.
 
-## Phase 0 review summary (awaiting owner decision)
+## Phase 0 decisions (accepted 2026-10-04)
 
-**Accepted: none.** Every row below is *Proposed* and needs an explicit owner
-decision: accept, revise, or reject. D-007 to D-010 do not block Phase 1 and
-are not listed.
+**All rows below are Accepted.** D-007 and D-009 remain Proposed, and D-008
+and D-010 remain Unresolved. None of those four blocks Phase 1, so they are
+not listed.
 
-| ID | Proposed decision | Rationale | Alternatives considered | Key consequences |
+| ID | Decision | Rationale | Alternatives considered | Key consequences |
 |----|-------------------|-----------|-------------------------|------------------|
-| D-001 | `Model[S, A]` with `Init`, `Next`, `AppendKey(buf, s)`, using a push-style API. **Recommended: 3b** `emit func(A, S) bool` (alternatives: 3a `emit func(A, S)`, 4 `iter.Seq2[A, S]`); awaiting owner approval. Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state. 3b and 4 also let the engine stop a model early and detect emissions after a stop. | `Next(s) []S`; `Actions` + `NextState` (Stateright). | 3a can never interrupt a model's `Init`/`Next` call: work is wasted, and an endlessly emitting call hangs the run. 3b and 4 rely on models honoring the stop; 4's misuse detection is gc behavior, not spec. 3b and 4 put a stop obligation on every model. Models must copy before mutating. |
+| D-001 | `Model[S, A]` with `Init`, `Next`, `AppendKey(buf, s)`, using a push-style API. **Accepted: 3b** `emit func(A, S) bool` (not chosen: 3a `emit func(A, S)`, 4 `iter.Seq2[A, S]`). Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state. 3b and 4 also let the engine stop a model early and detect emissions after a stop. | `Next(s) []S`; `Actions` + `NextState` (Stateright). | 3a can never interrupt a model's `Init`/`Next` call: work is wasted, and an endlessly emitting call hangs the run. 3b and 4 rely on models honoring the stop; 4's misuse detection is gc behavior, not spec. 3b and 4 put a stop obligation on every model. Models must copy before mutating. |
 | D-002 | Identity = exact canonical byte key. No fingerprint-only mode in Phases 1–4. | Exact verdicts. Hash collisions cannot cause missed states. Works for any state shape. | `S comparable` with `map[S]ID`; 64-bit fingerprints (TLC-style). | Cost of encoding every successor. The model author must make the key injective and canonical. Helper encoders are needed. |
 | D-003 | Baseline: `map[string]StateID` + `parent`/`edge`/`depth` slices + FIFO of `(ID, S)`. Optimized layout deferred. | Simplest correct design, using the map's built-in collision handling. Measure before redesigning. | Arena + open addressing; packed fixed-width keys; frontier stores IDs and decodes. | Higher memory per state and GC pressure, both known up front. Phase 4 may replace it, behind the same semantics. |
 | D-004 | Single-threaded BFS only in Phase 1. DFS later, only if measured to be needed. | BFS alone guarantees shortest traces. | DFS; iterative deepening; random simulation. | Wide models may exhaust memory in the frontier. |
@@ -30,7 +31,7 @@ are not listed.
 
 ---
 
-## D-001 Model interface and state ownership — Proposed (option 3b recommended; awaiting owner approval)
+## D-001 Model interface and state ownership — Accepted (2026-10-04): option 3b
 
 **Context.** The interface determines how easy models are to write, how much
 the engine allocates, and whether traces carry readable action labels.
@@ -97,7 +98,7 @@ the engine allocates, and whether traces carry readable action labels.
    It feels idiomatic, but each call may allocate a closure; this is
    unmeasured.
 
-**Recommendation (recorded 2026-10-04; not yet approved by the owner).**
+**Decision (accepted by the owner, 2026-10-04).**
 **Option 3b:** `Init(emit func(S) bool)` and `Next(s S, emit func(A, S) bool)`,
 with the contract given under 3b above, generic `Model[S, A any]`, and
 `AppendKey(buf, s) []byte` (ARCHITECTURE.md §3.1). Emitted states are
@@ -114,8 +115,7 @@ or that ignores `false` (keeps computing, or emits again from another
 goroutine where detection is not guaranteed). Such code still hangs or wastes
 the run, as under every option.
 
-This stays **Proposed** until the owner explicitly approves it. Bound and
-initialization semantics (D-012) are the same under all three options. Only
+Bound and initialization semantics (D-012) are the same under all three options. Only
 the handling of emissions after termination differs (D-012, Initialization
 rule 7).
 
@@ -135,7 +135,7 @@ model types behind one interface value, which no current requirement needs.
 in options 3a, 3b, and 4, and compare readability and allocations per
 expansion with `testing.AllocsPerRun`.
 
-## D-002 State identity and canonicalization — Proposed
+## D-002 State identity and canonicalization — Accepted (2026-10-04)
 
 **Context.** Identity must be exact (SEMANTICS.md §3). Canonical form is the
 model author's responsibility, and getting it wrong in one direction silently
@@ -161,7 +161,7 @@ Phase 3 measures how much.
 test build (TESTING.md §3). Key-injectivity property tests for every
 reference model.
 
-## D-003 Visited set and frontier design — Proposed (baseline), Unresolved (optimized)
+## D-003 Visited set and frontier design — Accepted (2026-10-04) for the baseline layout; optimized layout Unresolved
 
 **Context.** These two structures dominate memory and are likely CPU hot spots
 (unmeasured).
@@ -181,7 +181,7 @@ correctness.
 **Validation.** The Phase 3 baseline measurements, and Phase 4 A/B tests on
 the fixed suite with identical semantic results.
 
-## D-004 Search algorithm selection — Proposed
+## D-004 Search algorithm selection — Accepted (2026-10-04)
 
 **Recommendation.** Single-threaded BFS is the only algorithm in Phase 1. DFS
 is added only if Phase 3 shows the frontier is the memory bottleneck on real
@@ -192,7 +192,7 @@ models. Its results must not claim shortest traces.
 **Validation.** Shortest-trace tests against the reference explorer
 (TESTING.md §5).
 
-## D-005 Counterexample representation — Proposed
+## D-005 Counterexample representation — Accepted (2026-10-04)
 
 **Options.**
 1. Store `(parent, edge ordinal)` per state, and rebuild the trace by
@@ -210,7 +210,7 @@ the engine needs anyway.
 **Validation.** Every counterexample in every test is replayed independently
 and checked to reach the violating key.
 
-## D-006 Determinism guarantees — Proposed
+## D-006 Determinism guarantees — Accepted (2026-10-04)
 
 **Recommendation.** The contract in SEMANTICS.md §7: identical verdicts,
 traces, and counted statistics for pure models under single-threaded BFS.
@@ -283,18 +283,18 @@ mitigated by printing the terminal-state count in every result.
 **Validation.** Owner decision. A test model with a deliberate deadlock is
 needed in either case.
 
-## D-011 Module path, Go directive, and package layout — Proposed (awaiting owner approval)
+## D-011 Module path, Go directive, and package layout — Accepted (2026-10-04)
 
 **Context.** No `go.mod` exists. Two values must be fixed before Phase 1
 creates it.
 
-**Proposed module path: `github.com/stevenstank/atlas`.**
-⚠ *Assumption to approve:* the repository will be published at
+**Module path: `github.com/stevenstank/atlas`.**
+*Approved assumption:* the repository will be published at
 `https://github.com/stevenstank/atlas`. If it is hosted elsewhere, or renamed,
 the path must change before any package imports it. Changing it afterward
 means rewriting every import.
 
-**Proposed Go directive: `go 1.26`.** This is a **compatibility decision**,
+**Go directive: `go 1.26`.** This is a **compatibility decision**,
 not a record of which toolchain happens to be installed locally. The `go`
 line in `go.mod`:
 
@@ -326,7 +326,7 @@ CLI.
 **Validation.** The owner approves the module path and the `go` directive
 before Phase 1 creates `go.mod`.
 
-## D-012 Completion status under depth and state bounds — Proposed (awaiting owner approval)
+## D-012 Completion status under depth and state bounds — Accepted (2026-10-04)
 
 ### Problem
 
@@ -338,7 +338,7 @@ documents:
 
 - the SEMANTICS.md §8 Grid2 example (bound 4 ⇒ `Exhausted`) assumes depth-D
   states *are* expanded;
-- ARCHITECTURE.md §3.9 says "don't expand states at depth = D" (now marked pending D-012);
+- ARCHITECTURE.md §3.9 says "don't expand states at depth = D" (now marked superseded by D-012);
 - rule 3 (state bound N) does not say what happens when the model has exactly
   N reachable states.
 
@@ -362,7 +362,7 @@ end it only when an unseen state would exceed N.**
 
 Proposed: **(b) + (ii)**, specified below.
 
-### Proposed rules (not yet applied to SEMANTICS.md)
+### Rules (accepted; SEMANTICS.md §8 and §10 still need the text folded in)
 
 **Terms.** *Admitted* means inserted into the visited set (counted in
 `StatesDiscovered`). Every admitted state is checked against the invariants
@@ -563,7 +563,7 @@ The current normative identity (SEMANTICS.md §10) is I2 with no cutoff or
 refusal terms and `|Init distinct|` for `InitAdmitted`. It holds for runs with
 no depth or state limit configured.
 
-### Invalid configuration (proposed)
+### Invalid configuration
 
 Invalid limits, such as N = 0, D < 0, or a negative timeout, are a **caller
 error, not a model error**. `ModelError` means the model's code misbehaved.
@@ -608,7 +608,7 @@ not only what was observed along the way.
 - **Interruptions** are observed only at the scheduled checks (next
   subsection).
 
-### Interruption check schedule (proposed)
+### Interruption check schedule
 
 Cancellation, timeout, and resource limits are all observed only at these
 points:
@@ -679,7 +679,9 @@ were verified with a throwaway script that implements the check order above.
   rule. The state limit stops inside an expansion, as violations already do,
   so SEMANTICS.md §8's sentence "limits are checked between state expansions"
   must be narrowed to time, memory, and cancellation.
-- **Edits required on acceptance:** SEMANTICS.md §8 rules 2–3, its status
+- **Edits required on acceptance** (2026-10-04: the pending-decision markers
+  now point to D-012 as normative; folding the rule text into SEMANTICS.md
+  §8 and §10, and ARCHITECTURE.md §2, is still outstanding): SEMANTICS.md §8 rules 2–3, its status
   table row for `Bounded`, its Grid2 bound example, and §10 (new counters,
   identities I1–I4, and replacing "repeated `Init` entries are ignored" with
   `InitDuplicates`); ARCHITECTURE.md §2 (the data flow: initial duplicates

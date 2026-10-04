@@ -57,12 +57,12 @@ loop until frontier empty / limit / violation:
 
 **Responsibility:** user code that defines the state space (SEMANTICS.md §1).
 
-Shape recommended in D-001: **option 3b**. It is still Proposed and awaits
-owner approval. The alternatives (3a with no `bool`, and 4 with `iter.Seq2`)
-are described in D-001.
+Shape accepted in D-001: **option 3b** (2026-10-04). The alternatives that
+were not chosen (3a with no `bool`, and 4 with `iter.Seq2`) are recorded in
+D-001.
 
 ```go
-// Proposed (D-001 option 3b, recommended). S is the state type, A the action label type.
+// D-001 option 3b (accepted). S is the state type, A the action label type.
 type Model[S any, A any] interface {
     // Init emits initial states in a deterministic order. If emit returns
     // false, Init must make no further emit calls and return promptly.
@@ -209,8 +209,8 @@ Optional progress reporting goes through a callback,
 ### 3.9 Cancellation and resource limits
 
 `Run(ctx, model, opts)`. The engine checks `ctx.Err()`, the deadline, and
-memory at fixed points. *(Pending D-012; proposed schedule in DECISIONS.md
-D-012, "Interruption check schedule".)* The checks happen once before `Init`,
+memory at fixed points. *(Schedule per DECISIONS.md D-012, "Interruption
+check schedule".)* The checks happen once before `Init`,
 then before dequeues 1, 1+K, 1+2K, …. They never happen inside `Init` or
 `Next`, and there is no check once the frontier is empty. K is tunable, starts
 around 1024, and will be measured. Tests that need deterministic
@@ -219,8 +219,8 @@ Limits:
 
 | Limit         | Mechanism                             | Exactness |
 |---------------|---------------------------------------|-----------|
-| Depth bound   | don't expand states at depth = D *(pending D-012, proposed: depth-D states are checked and expanded; unseen D+1 successors are refused as `CutoffTransitions`)* | exact |
-| State bound   | stop after N discoveries *(pending D-012, proposed: N includes the initial state; stop only when an unseen in-depth state would exceed N. The depth check runs before the state check.)* | exact |
+| Depth bound   | don't expand states at depth = D *(superseded by D-012: depth-D states are checked and expanded; unseen D+1 successors are refused as `CutoffTransitions`)* | exact |
+| State bound   | stop after N discoveries *(superseded by D-012: N includes the initial state; stop only when an unseen in-depth state would exceed N. The depth check runs before the state check.)* | exact |
 | Time limit    | context deadline                      | approximate, checked every K |
 | Memory limit  | `runtime/metrics` heap sample vs. cap | approximate; may overshoot |
 

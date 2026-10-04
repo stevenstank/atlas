@@ -209,16 +209,14 @@ cannot detect impurity that never shows up along these paths.
 
 ## 8. Bounds, termination, and completion status
 
-> **Pending decision: D-012.** Rules 2 and 3 below, and the `Bounded` row of
-> the status table, are **not settled**. As written, rule 2 cannot be
-> implemented. [DECISIONS.md](DECISIONS.md) D-012 proposes replacement rules:
-> depth-D states are checked and expanded; unseen successors beyond D, or a
-> state that would exceed N, are refused. `Bounded` is reported only when
-> such a refusal happened and the run then completed normally, or ended at
-> the state-limit refusal itself. An interruption after a depth cutoff gives
-> `Incomplete`. Until the owner accepts or revises D-012, neither
-> version is normative, and neither may be implemented. Expected values under
-> the proposal are in [CONFORMANCE.md](CONFORMANCE.md).
+> **D-012 accepted (2026-10-04).** [DECISIONS.md](DECISIONS.md) D-012 is
+> normative for depth and state limits, initialization, the interruption
+> schedule, and statistics. It **supersedes** rules 2 and 3 below and the
+> `Bounded` row of the status table: depth-D states are checked and expanded;
+> unseen successors beyond D, or a state that would exceed N, are refused;
+> and `Bounded` requires such a refusal. Where this section differs, D-012
+> governs. Folding its text into this section is outstanding. Expected values
+> are in [CONFORMANCE.md](CONFORMANCE.md).
 
 A finite `Reach(M)` together with BFS always terminates. Atlas does not require
 `Reach(M)` to be finite, but if it is infinite, the run ends only because of a
@@ -240,7 +238,7 @@ Rules:
    must make it impossible to confuse `Bounded` or `Incomplete` with
    `Exhausted`. For example, a future CLI must use distinct exit codes, and the
    result type must not offer a single `OK bool` field.
-2. **Depth bound D.** *(Pending D-012; see the note at the top of §8.)* States at depth D are discovered and checked but not
+2. **Depth bound D.** *(Superseded by D-012; see the note at the top of §8.)* States at depth D are discovered and checked but not
    expanded. If no state at depth D has any successor, then nothing was cut
    off and the status is `Exhausted`. Otherwise it is `Bounded`, with the
    precise claim: "no violation in any state at depth ≤ D". This claim is
@@ -259,10 +257,10 @@ Rules:
    `Violation`, whatever limits were configured.
 
 Limits are checked between state expansions, so one call to `Next` always
-completes once it has started. *(This sentence depends on D-001 and D-012:
-it stays true under callback option 3a, but under 3b or 4 a violation or
-state-limit refusal ends the call early. It is to be revised when those
-decisions are made.)*
+completes once it has started. *(Superseded by accepted D-001 option 3b and
+D-012: on a violation or state-limit refusal, `emit` returns `false` and a
+conforming model returns early. Interruptions are still never observed
+inside a call.)*
 
 *Example.* Run `Grid2` without its invariant and with depth bound 3. The
 states at depth ≤ 3 are discovered and checked (8 states). `(2,1)` and `(1,2)`
@@ -299,12 +297,11 @@ trace is usually a precise lead.
 
 ## 10. Reported statistics
 
-> *Pending D-012:* the proposal adds `CutoffTransitions`,
-> `StateLimitRefusals`, and initialization counters (`InitEmissions`,
-> `InitAdmitted`, `InitDuplicates`). It replaces the identity at the end of
-> this section with identities I1–I4, each valid only under stated
-> preconditions. Until then, the identity below applies only to runs with no
-> depth or state limit. See [DECISIONS.md](DECISIONS.md) D-012.
+> *D-012 (accepted)* adds `CutoffTransitions`, `StateLimitRefusals`, and
+> initialization counters (`InitEmissions`, `InitAdmitted`,
+> `InitDuplicates`). It replaces the identity at the end of this section with
+> identities I1–I4, each valid only under stated preconditions. See
+> [DECISIONS.md](DECISIONS.md) D-012.
 
 Every result reports, whatever its status:
 
