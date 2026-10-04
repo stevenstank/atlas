@@ -229,7 +229,9 @@ Rules:
    must make it impossible to confuse `Bounded` or `Incomplete` with
    `Exhausted`. For example, a future CLI must use distinct exit codes, and the
    result type must not offer a single `OK bool` field.
-2. **Depth bound D.** States at depth D are discovered and checked but not
+2. **Depth bound D.** *(Rules 2 and 3 are under review in
+   [DECISIONS.md](DECISIONS.md) D-012. As written, rule 2 cannot be
+   implemented.)* States at depth D are discovered and checked but not
    expanded. If no state at depth D has any successor, then nothing was cut
    off and the status is `Exhausted`. Otherwise it is `Bounded`, with the
    precise claim: "no violation in any state at depth ≤ D". This claim is

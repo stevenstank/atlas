@@ -116,6 +116,7 @@ two months of optional work. Each phase has explicit exit criteria. See
 | [docs/DECISIONS.md](docs/DECISIONS.md) | Decision records (open and proposed) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phases, dependencies, exit criteria |
 | [docs/TESTING.md](docs/TESTING.md) | Testing strategy and oracles |
+| [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Hand-worked expected results for conformance tests |
 | [docs/BENCHMARKS.md](docs/BENCHMARKS.md) | Benchmark methodology and comparison rules |
 | [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md) | The optimization application |
 | [docs/RESEARCH.md](docs/RESEARCH.md) | Prior art: TLC, Stateright, Porcupine, simtest-go, MadSim |

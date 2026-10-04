@@ -103,7 +103,7 @@ Per-state metadata lives in parallel slices indexed by `StateID`:
 ```go
 parent []StateID   // NoParent for initial states
 edge   []uint32    // ordinal of the step in parent's Next emission (or Init index)
-depth  []uint32    // optional; derivable, but cheap and useful for stats
+depth  []uint32    // needed for depth bounds and MaxDepth (a per-level counter would also work)
 ```
 
 Alternatives to measure in Phase 4 (not decided):

@@ -20,7 +20,7 @@ Every semantic test compares against one of these independent oracles:
    The 8-puzzle has 181,440 reachable states (9!/2).
 3. **The reference explorer**: a deliberately naive implementation in a
    test-only package. It shares **no code** with `core` or `check`. It stores
-   every state as `map[string]struct{}` keyed by `AppendKey` output, computes
+   every state in a `map[string]int` (key → BFS depth) keyed by `AppendKey` output, computes
    BFS depths level by level with plain slices, and returns the full set of
    reachable keys with their depths. It is kept simple enough to check by
    reading. Speed does not matter.
@@ -94,7 +94,7 @@ Water jugs: trace length exactly 6. `Grid2`: the exact trace in SEMANTICS.md.
 | Scenario                                  | Expected status | Extra checks |
 |-------------------------------------------|-----------------|--------------|
 | Depth bound below the model's max depth   | `Bounded`       | claim names depth D; discovered set = reference states at depth ≤ D |
-| Depth bound ≥ the model's max depth       | `Exhausted`     | identical to unbounded run |
+| Depth bound ≥ the model's max depth       | `Exhausted` (pending D-012) | identical to unbounded run |
 | State bound N below the reachable count   | `Bounded`       | exactly N discovered; the report states the complete depth |
 | Timeout on a large model                  | `Incomplete`    | returns within timeout + slack |
 | Canceled context (before start, mid-run)  | `Incomplete`    | partial stats consistent |

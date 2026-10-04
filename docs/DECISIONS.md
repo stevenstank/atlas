@@ -8,8 +8,22 @@ Lightweight ADRs. Each record has a status:
 - **Superseded:** replaced by a later record (linked).
 
 All records below are **Proposed** or **Unresolved** as of 2026-10-04. None is
-accepted yet. Phase 0 exits when D-001 through D-006 and D-011 are accepted
-([ROADMAP.md](ROADMAP.md)).
+accepted yet. Phase 0 exits when D-001 through D-006, D-011, and D-012 are
+accepted ([ROADMAP.md](ROADMAP.md)).
+
+## Phase 0 review summary (awaiting owner decision)
+
+Nothing in this table is accepted. Each row needs an explicit owner decision:
+accept, revise, or reject.
+
+| ID | Proposed decision | Rationale | Alternatives considered | Key consequences |
+|----|-------------------|-----------|-------------------------|------------------|
+| D-001 | `Model[S, A]` with `Init(emit)`, `Next(s, emit func(A, S))`, `AppendKey(buf, s)`. Emitted states are immutable and owned by the engine. | Action labels for traces; no slice allocated per state; the engine can stop partway through a state's successors. | `Next(s) []S`; `Actions` + `NextState` (Stateright); `iter.Seq2`. | Callback style is less familiar. Models must copy before mutating. Model types are not interchangeable behind one interface value. |
+| D-002 | Identity = exact canonical byte key. No fingerprint-only mode in Phases 1–4. | Exact verdicts. Hash collisions cannot cause missed states. Works for any state shape. | `S comparable` with `map[S]ID`; 64-bit fingerprints (TLC-style). | Cost of encoding every successor. The model author must make the key injective and canonical. Helper encoders are needed. |
+| D-003 | Baseline: `map[string]StateID` + `parent`/`edge`/`depth` slices + FIFO of `(ID, S)`. Optimized layout deferred. | Simplest correct design, using the map's built-in collision handling. Measure before redesigning. | Arena + open addressing; packed fixed-width keys; frontier stores IDs and decodes. | Higher memory per state and GC pressure, both known up front. Phase 4 may replace it, behind the same semantics. |
+| D-004 | Single-threaded BFS only in Phase 1. DFS later, only if measured to be needed. | BFS alone guarantees shortest traces. | DFS; iterative deepening; random simulation. | Wide models may exhaust memory in the frontier. |
+| D-005 | Store `(parent, edge ordinal)` per state; rebuild traces by replaying `Next`. | About 8 B/state. Replay also detects nondeterminism. | Store `(parent, action)`; store full states. | Trace building costs extra `Next` calls. Requires deterministic models, which D-006 requires anyway. |
+| D-006 | Pure model + same config + single-threaded BFS ⇒ identical verdict, trace, and counted stats. Order comes only from `Init`/`Next`. | Reproducible bugs and regression tests; replay depends on it. | Weaker contract (verdict only); seeded randomized order. | Constrains parallelism (D-008) and any randomized data structure. Timing-cut runs are excluded from the contract. |
 
 ---
 
@@ -188,12 +202,66 @@ mitigated by printing the terminal-state count in every result.
 **Validation.** Owner decision. A test model with a deliberate deadlock is
 needed in either case.
 
-## D-011 Module path and package layout — Unresolved
+## D-011 Module path and package layout — Proposed (awaiting owner approval)
 
 **Context.** No `go.mod` exists. The module path depends on where the
 repository is hosted, which is the owner's decision.
 
-**Recommendation.** One module. Packages: `core`, `check`, `models`,
-`internal/bench`, and later `optimize`. No `cmd/` until a CLI is justified.
+**Proposed module path: `github.com/stevenstank/atlas`.**
+⚠ *Assumption to approve:* the repository will be published at
+`https://github.com/stevenstank/atlas`. If it is hosted elsewhere, or renamed,
+the path must change before any package imports it. Changing it afterward
+means rewriting every import.
 
-**Validation.** Owner confirms the module path before Phase 1 starts.
+**Recommendation.** One module. Packages: `core`, `check`, `models`,
+`internal/bench`, and later `optimize`. No public `cmd/` until a CLI is
+justified. The one-shot benchmark driver proposed in
+[BENCHMARKS.md](BENCHMARKS.md) §5 lives under `internal/` and is not a public
+CLI. The `go` directive is still to be decided. The proposal is `go 1.26`,
+the version in use, unless the owner wants to support older toolchains.
+
+**Validation.** The owner confirms the module path and the `go` directive
+before Phase 1 creates `go.mod`.
+
+## D-012 Completion status under depth and state bounds — Unresolved
+
+**Context.** SEMANTICS.md §8 rule 2 says a depth-bounded run is `Exhausted` if
+"no state at depth D has any successor", but it also says states at depth D
+are "not expanded". The engine cannot know whether a state has successors
+without calling `Next`. The rule cannot be implemented as written.
+SEMANTICS.md §6 (`Grid2`, bound 4 ⇒ `Exhausted`) and TESTING.md §7
+("bound ≥ max depth ⇒ `Exhausted`") both assume the depth-D states *are*
+expanded. Rule 3 (state bound N) has a similar ambiguity: if the model has
+exactly N reachable states, is the run `Bounded` or `Exhausted`?
+
+**Options (depth bound).**
+- (a) Never call `Next` on depth-D states. Report `Bounded` whenever any
+  depth-D state exists. Simple, but `Grid2` bound 4 and water jugs bound 7
+  become `Bounded` even though every state was found.
+- (b) Call `Next` on depth-D states, but do not insert new successors. Count
+  each such transition as `CutOff`. The run is `Exhausted` if and only if
+  `CutOff == 0` (and no other limit fired). This costs one extra level of
+  `Next` calls and key lookups, with no insertions. It needs a new
+  `CutOff` statistic, and the identity becomes
+  `transitions = discovered − |init| + duplicates + cutoff`.
+- (c) Like (b), but also insert and check the depth-D+1 states. This muddies
+  the claim ("≤ D" becomes "≤ D+1, partially").
+
+**Options (state bound).**
+- (i) Stop as soon as the N-th state is discovered, and always report
+  `Bounded`.
+- (ii) Stop only when an (N+1)-th new state would be inserted (counted as
+  `CutOff`). If that never happens, the run is `Exhausted`.
+
+**Recommendation.** (b) and (ii). They make the existing examples and tests
+correct. A bound that turns out not to matter yields `Exhausted`, which is
+true, and the claim "no violation at depth ≤ D" is unchanged. Expected
+values for both options are in [CONFORMANCE.md](CONFORMANCE.md) (J3, J4).
+
+**Consequences if accepted.** Update SEMANTICS.md §8 rules 2–3 and §10,
+ARCHITECTURE.md §3.9, and TESTING.md §7. These edits are not made yet, pending
+the decision.
+
+**Validation.** Conformance tests J3/J4 and `Grid2` with bounds 3 and 4.
+Random-graph differential tests where the bound equals the reference
+explorer's maximum depth.

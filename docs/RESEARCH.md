@@ -64,7 +64,7 @@ Source: <https://github.com/stateright/stateright>,
 **Relevant to Atlas (assessment)**
 - This is the closest analogue: a model written in a general-purpose language,
   checked by an embedded checker. Separating `actions` from `next_state` gives
-  readable action labels in traces. Atlas adopts the same idea in a single
+  readable action labels in traces. Atlas proposes the same idea in a single
   callback (D-001).
 - Stateright's documentation states the same single-threaded caveat on
   shortest paths that Atlas's SEMANTICS.md does. Atlas states it as well.

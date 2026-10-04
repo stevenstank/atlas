@@ -62,12 +62,12 @@ review, test and benchmark methodology, hand-worked examples.
   (SEMANTICS.md §6)
 - [x] [TESTING.md](TESTING.md), [BENCHMARKS.md](BENCHMARKS.md),
   [OPTIMIZATION.md](OPTIMIZATION.md), README
-- [ ] A second hand-worked model with a non-trivial shortest counterexample:
-  the water-jug puzzle (3 L and 5 L jugs, bad state "big jug holds 4 L"). The
-  expected shortest trace is 6 steps. Write its reachable-state count down
-  before Phase 1 by enumerating by hand or with a throwaway script, kept out of
-  the repository.
-- [ ] Owner review: D-001–D-006 and D-011 accepted or revised
+- [x] A second hand-worked model with a non-trivial shortest counterexample:
+  the water-jug puzzle. The full expansion is in
+  [CONFORMANCE.md](CONFORMANCE.md): 16 states, 58 transitions, and a 6-step
+  trace.
+- [ ] Owner review: D-001–D-006, D-011 (module path), and D-012 (bound
+  semantics) accepted or revised
 
 **Exit criteria**
 - The state, transition, identity, and status definitions are unambiguous: two
