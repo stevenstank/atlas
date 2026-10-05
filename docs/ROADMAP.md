@@ -129,7 +129,9 @@ Mitigation: key-injectivity tests.
 **Status: in progress.** Batch 1 done: trace formatting (D-013), the
 `internal/tracetest` helper, and the concurrent register with its broken
 variant. Batch 2 done: the alternating-bit protocol with its broken
-variant. Owner review of both counterexamples is pending.
+variant. Batch 3 done: the task queue with two broken variants, and the
+D-010 review (owner decision pending). Owner review of all counterexamples
+is pending.
 
 **Goal.** Realistic bounded protocol models and counterexamples that people
 can read.

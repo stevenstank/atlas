@@ -283,14 +283,24 @@ mitigated by printing the terminal-state count in every result.
 **Validation.** Owner decision. A test model with a deliberate deadlock is
 needed in either case.
 
-**Phase 2 observation (2026-10-05, not a decision).** The concurrent-register
-model ends only in legitimate terminal states (every client has finished its
-operations): 9 of 34 states at 2×1, 901 of 25,543 at 3×2. Treating them as
-violations would make every register run fail, so the model gives no reason
-to change the default now. The alternating-bit model has exactly one
-terminal state (all messages delivered and acknowledged), also legitimate.
-Neither model has a deliberate deadlock, which the validation above still
-needs.
+**Phase 2 review (2026-10-05) — for the owner to decide.** Evidence from
+the three Phase 2 models, correct variants:
+
+| Model | Terminal states | Meaning |
+|-------|-----------------|---------|
+| Concurrent register | 9 of 34 (2×1) … 901 of 25,543 (3×2) | every client finished its operations |
+| Alternating-bit protocol | exactly 1 at every size | all messages delivered and acknowledged, channels empty |
+| Task queue | Crashes+1 at every size | all tasks acked, workers idle (they differ only in crashes left) |
+
+Every terminal state is a legitimate end of a bounded run. None is a
+deadlock. Under a TLC-style default, all three correct models would report a
+violation, and each would need an explicit opt-out. Recommendation
+unchanged: **allowed by default**, terminal count always printed (done:
+`Result.String`, D-013). An opt-in check (for example a `Config` field that
+treats terminal states as violations, with a predicate for legitimate ends)
+can be added when a model needs it. That is new public API and is not built.
+Still needed in either case: a model with a deliberate deadlock. D-010 stays
+**Unresolved** until the owner decides.
 
 ## D-011 Module path, Go directive, and package layout — Accepted (2026-10-04)
 

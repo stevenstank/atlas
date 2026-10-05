@@ -365,3 +365,41 @@ retransmitted m0 makes R re-send ack 0). It stops after 13 (2×1), 22 (2×2),
 and 22 (3×2) admitted states, agreeing with the reference explorer.
 `InOrderDelivery` is not violated by either variant; a unit test checks its
 monitor directly.
+
+## Task queue (Phase 2)
+
+Model: `models.TaskQueue` (its doc comment defines the state, actions, emit
+order, and the `NoLostTask` and `AtMostOnce` invariants). Values below are
+for the correct variant, with no limits.
+
+**Hand count, 1 task, 1 worker.** Write a state as `(acked, runs, worker,
+crashes left)`, with the worker idle (I), holding t0 (H), or having run it
+(R). With no crashes the run is a chain: take, run, ack, giving 4 states, 3
+transitions, 1 terminal, depth 3. With 1 crash:
+
+| # | State | Steps | Out |
+|---|-------|-------|----:|
+| 1 | (no, 0, I, 1) | take | 1 |
+| 2 | (no, 0, H, 1) | run, crash → #5 | 2 |
+| 3 | (no, 1, R, 1) | ack, crash → #6 | 2 |
+| 4 | (yes, 1, I, 1) | terminal | 0 |
+| 5 | (no, 0, I, 0) | take | 1 |
+| 6 | (no, 1, I, 0) | take → #10 | 1 |
+| 7 | (no, 0, H, 0) | run → #8 | 1 |
+| 8 | (no, 1, R, 0) | ack | 1 |
+| 9 | (yes, 1, I, 0) | terminal | 0 |
+| 10 | (no, 1, H, 0) | run (store skips it) → #8 | 1 |
+
+10 states, 10 transitions, 2 terminal; the deepest is #9 (take, crash, take,
+run, ack), depth 5. The engine and the reference explorer agree.
+
+**Larger sizes** (tasks × workers × crashes; checked against the reference
+explorer, not by hand; Crashes+1 terminal states): 2×2×1: 84 states, 184
+transitions, depth 8; 2×2×2: 147, 368, 10; 3×2×2: 702, 2,070, 13; 3×3×2:
+1,836, 7,245, 13; 4×3×3: 15,768, 75,972, 18.
+
+**Broken variants.** `AckOnDelivery`: `Violation` of `NoLostTask` in 2
+steps (take, crash), stopping after 4 (1×1×1) and 7 (2×2×1) states.
+`NonIdempotent`: `Violation` of `AtMostOnce` in 5 steps (take, run, crash,
+take, run), stopping after 10 (1×1×1), 48 (2×2×1), and 218 (3×3×2) states.
+All agree with the reference explorer. Neither bug shows without a crash.

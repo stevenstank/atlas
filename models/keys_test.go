@@ -37,6 +37,10 @@ func TestProtocolKeysInjective(t *testing.T) {
 		"register 3x2 buggy": func() (int, int) { return keyStates(models.Register{Clients: 3, Ops: 2, NoInvalidate: true}) },
 		"abp 4x3":            func() (int, int) { return keyStates(models.ABP{Msgs: 4, Cap: 3}) },
 		"abp 3x2 buggy":      func() (int, int) { return keyStates(models.ABP{Msgs: 3, Cap: 2, IgnoreAckBit: true}) },
+		"queue 4x3x3":        func() (int, int) { return keyStates(models.TaskQueue{Tasks: 4, Workers: 3, Crashes: 3}) },
+		"queue 3x3x2 buggy": func() (int, int) {
+			return keyStates(models.TaskQueue{Tasks: 3, Workers: 3, Crashes: 2, Bug: models.NonIdempotent})
+		},
 	} {
 		if states, keys := f(); states != keys {
 			t.Errorf("%s: %d distinct states but %d distinct keys", name, states, keys)
