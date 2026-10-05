@@ -287,8 +287,10 @@ needed in either case.
 model ends only in legitimate terminal states (every client has finished its
 operations): 9 of 34 states at 2×1, 901 of 25,543 at 3×2. Treating them as
 violations would make every register run fail, so the model gives no reason
-to change the default now. It also has no deliberate deadlock, which the
-validation above still needs.
+to change the default now. The alternating-bit model has exactly one
+terminal state (all messages delivered and acknowledged), also legitimate.
+Neither model has a deliberate deadlock, which the validation above still
+needs.
 
 ## D-011 Module path, Go directive, and package layout — Accepted (2026-10-04)
 

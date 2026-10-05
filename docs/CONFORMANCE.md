@@ -324,3 +324,44 @@ explorer agree.
 4-step trace at every size tested (a write must finish and a read must then
 start and finish, so 4 is the minimum). It stops after 28 (2×1), 52 (2×2),
 and 130 (3×2) admitted states, agreeing with the reference explorer.
+
+## Alternating-bit protocol (Phase 2)
+
+Model: `models.ABP` (its doc comment defines the state, actions, emit order,
+and the `InOrderDelivery` and `AckedDelivered` invariants). Values below are
+for the correct variant, with no limits.
+
+**Hand count, 1 message, capacity 1.** Only m0 (bit 0) and ack 0 exist.
+Write a state as `(acked, delivered, data, acks)`:
+
+| # | State | Enabled steps | Out |
+|---|-------|---------------|----:|
+| 1 | (0, 0, [], []) | send | 1 |
+| 2 | (0, 0, [m0], []) | lose m0, receive (deliver) | 2 |
+| 3 | (0, 1, [], []) | send | 1 |
+| 4 | (0, 1, [m0], []) | lose m0, receive (discard, re-ack) | 2 |
+| 5 | (0, 1, [], [0]) | send, lose ack, receive ack (advance) | 3 |
+| 6 | (0, 1, [m0], [0]) | lose m0, lose ack, receive ack (R blocked: ack channel full) | 3 |
+| 7 | (1, 1, [], []) | none (terminal) | 0 |
+| 8 | (1, 1, [m0], []) | lose m0, receive (discard, re-ack) | 2 |
+| 9 | (1, 1, [], [0]) | lose ack, receive ack (ignored: done) | 2 |
+
+Duplication never fires at capacity 1. `acked = 0, delivered = 0` with an
+ack is impossible (acks come only from a receive), and (1, 1, [m0], [0]) is
+unreachable: after S advances, a new ack needs R to consume the only m0, and
+S no longer sends. Total 9 states, 16 transitions, 1 terminal; the deepest
+state is #9 (send, receive, send, receive ack, receive), depth 5. The engine
+and the reference explorer agree.
+
+**Larger sizes** (messages × capacity; checked against the reference
+explorer, not by hand; always 1 terminal state): 2×1: 18 states, 36
+transitions, depth 8; 2×2: 51, 184, 10; 3×2: 81, 299, 13; 3×3: 172, 775,
+15; 4×3: 240, 1,090, 18.
+
+**Broken variant** (`IgnoreAckBit`): `Violation` of `AckedDelivered`. The
+shortest trace is 5 steps when the ack channel can hold a duplicate
+(capacity ≥ 2: the channel duplicates ack 0) and 6 steps at capacity 1 (a
+retransmitted m0 makes R re-send ack 0). It stops after 13 (2×1), 22 (2×2),
+and 22 (3×2) admitted states, agreeing with the reference explorer.
+`InOrderDelivery` is not violated by either variant; a unit test checks its
+monitor directly.
