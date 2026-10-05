@@ -98,10 +98,11 @@ When invariants are checked:
   each violation.
 
 **Deadlock.** A reachable state with an empty `Next(s)` is a **terminal
-state**. Whether a terminal state counts as a violation is a configuration
-option. By default it is *not* a violation, because many models have
+state**. A terminal state is *not* a violation, because many models have
 legitimate final states. Atlas always counts terminal states in the run
-statistics. This default is open in [DECISIONS.md](DECISIONS.md) D-010.
+statistics and prints the count in every result. This default was accepted in
+[DECISIONS.md](DECISIONS.md) D-010; there is no option to change it yet, and
+adding one would need a new decision.
 
 ## 6. Search order and the shortest-counterexample guarantee
 

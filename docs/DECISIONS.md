@@ -9,14 +9,15 @@ Lightweight ADRs. Each record has a status:
 
 On 2026-10-04 the owner explicitly accepted D-001 (option 3b), D-002, D-003
 (baseline layout), D-004, D-005, D-006, D-011, and D-012. That meets the
-Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). The other records keep the
+Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). On 2026-10-05 the owner
+accepted D-010 and D-013 at the Phase 2 review. The other records keep the
 status shown in their headings.
 
 ## Phase 0 decisions (accepted 2026-10-04)
 
 **All rows below are Accepted.** D-007 and D-009 remain Proposed, and D-008
-and D-010 remain Unresolved. None of those four blocks Phase 1, so they are
-not listed.
+and D-010 were Unresolved at the time (D-010 was accepted on 2026-10-05). None
+of those four blocks Phase 1, so they are not listed.
 
 | ID | Decision | Rationale | Alternatives considered | Key consequences |
 |----|-------------------|-----------|-------------------------|------------------|
@@ -269,7 +270,7 @@ optimization-specific branches in the model checker.
 **Validation.** Before Phase 5 begins, review whether `core` has gained any
 import of, or concept from, `optimize`.
 
-## D-010 Deadlock (terminal state) default — Unresolved
+## D-010 Deadlock (terminal state) default — Accepted (2026-10-05)
 
 **Options.** Treat terminal states as violations by default (as TLC does), or
 treat them as allowed by default with an opt-in check.
@@ -301,6 +302,15 @@ treats terminal states as violations, with a predicate for legitimate ends)
 can be added when a model needs it. That is new public API and is not built.
 Still needed in either case: a model with a deliberate deadlock. D-010 stays
 **Unresolved** until the owner decides.
+
+**Decision (accepted 2026-10-05).** A terminal state is **not** a violation by
+default. The existing behavior stays: terminal states are counted in
+`Stats.TerminalStates` and printed in every `Result.String`. No deadlock
+option or API is added; one can be proposed as a new decision if a model
+needs it. The owner waived the deliberate-deadlock model: the default is
+covered by `TestDeadEndIsNotAViolation` (a `Grid2` dead end gives `Exhausted`
+with 1 terminal state) and by the terminal counts pinned in the three Phase 2
+model tests.
 
 ## D-011 Module path, Go directive, and package layout — Accepted (2026-10-04)
 
@@ -716,7 +726,7 @@ random-graph differential tests, use limits equal to the reference
 explorer's maximum depth and to its exact state count (expect `Exhausted`),
 and one less than each (expect `Bounded`).
 
-## D-013 Readable results and traces — Proposed (2026-10-05)
+## D-013 Readable results and traces — Accepted (2026-10-05)
 
 **Context.** Phase 2 needs `String`/`Format` hooks for states and actions,
 and printed results that cannot be mistaken for success.
@@ -736,3 +746,6 @@ rejected because Atlas must work with plain types.
 
 **Trace-regression helper.** `internal/tracetest.Expect` is internal, not
 public API: it is a test convenience, and its shape may change.
+
+**Accepted 2026-10-05** by the owner as implemented in Phase 2 batch 1, after
+reviewing the four deliberate-bug counterexamples printed in this format.

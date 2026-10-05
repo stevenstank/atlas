@@ -5,7 +5,7 @@ explores every reachable state of a bounded, user-defined model, checks safety
 properties, and produces reproducible counterexample traces when a property is
 violated.
 
-> **Status: Phase 1 complete; Phase 2 in progress.** Phase 0 decisions are accepted
+> **Status: Phases 1 and 2 complete; Phase 3 not started.** Phase 0 decisions are accepted
 > ([docs/DECISIONS.md](docs/DECISIONS.md)). The core BFS engine (`core`,
 > `check`) is implemented and tested against the conformance tables in
 > [docs/CONFORMANCE.md](docs/CONFORMANCE.md), an independent reference
@@ -85,16 +85,16 @@ type Model[S any, A any] interface {
 }
 ```
 
-## Planned capabilities
+## Capabilities
 
 | Capability                                   | Status  | Phase |
 |----------------------------------------------|---------|-------|
-| Initial states, transitions, exact dedup     | Planned | 1 |
-| BFS with shortest counterexamples            | Planned | 1 |
-| Safety invariants, replayable traces         | Planned | 1 |
-| Depth/state/time/memory limits, cancellation | Planned | 1 |
-| Search statistics                            | Planned | 1 |
-| Reference protocol models                    | Planned | 2 |
+| Initial states, transitions, exact dedup     | Done    | 1 |
+| BFS with shortest counterexamples            | Done    | 1 |
+| Safety invariants, replayable traces         | Done    | 1 |
+| Depth/state/time/memory limits, cancellation | Done    | 1 |
+| Search statistics                            | Done    | 1 |
+| Reference protocol models, readable traces   | Done    | 2 |
 | Benchmark harness and baseline               | Planned | 3 |
 | Measured performance engineering             | Planned | 4 |
 | Exhaustive and branch-and-bound optimization | Planned | 5 |
@@ -103,8 +103,8 @@ type Model[S any, A any] interface {
 
 ## Roadmap
 
-Phase 0: specification (current) → 1: correctness-first engine → 2: protocol
-models → 3: performance baseline → 4: performance engineering → 5: optimizer →
+Phase 0: specification → 1: correctness-first engine → 2: protocol
+models → 3: performance baseline (next, not started) → 4: performance engineering → 5: optimizer →
 6: optional research. The plan is about four months of core work, plus up to
 two months of optional work. Each phase has explicit exit criteria. See
 [docs/ROADMAP.md](docs/ROADMAP.md).

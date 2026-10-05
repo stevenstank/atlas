@@ -3,6 +3,7 @@ package check
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -44,8 +45,13 @@ func TestNoStopReasonIsExhausted(t *testing.T) {
 			t.Errorf("no test case for %v", r)
 			continue
 		}
-		if res := f(); res.Reason != r || res.Status == Exhausted {
+		res := f()
+		if res.Reason != r || res.Status == Exhausted {
 			t.Errorf("%v: got %v/%v", r, res.Status, res.Reason)
+		}
+		// D-013: the printed form must not read as success either.
+		if first, _, _ := strings.Cut(res.String(), "\n"); !strings.Contains(first, "NOT VERIFIED ("+r.String()+")") {
+			t.Errorf("%v: printed as %q", r, first)
 		}
 	}
 }

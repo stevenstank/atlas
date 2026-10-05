@@ -1,7 +1,7 @@
 # Roadmap
 
-> Status: plan, not a promise. Current phase: **Phase 2 (in progress)**. Phase 0 decisions
-> accepted 2026-10-04; Phase 1 closed 2026-10-05.
+> Status: plan, not a promise. Current phase: **Phase 3 (not started)**. Phase 0 decisions
+> accepted 2026-10-04; Phase 1 and Phase 2 closed 2026-10-05.
 
 ## Timeline estimate
 
@@ -126,12 +126,23 @@ Mitigation: key-injectivity tests.
 
 ## Phase 2: Model-checking functionality and robustness
 
-**Status: in progress.** Batch 1 done: trace formatting (D-013), the
-`internal/tracetest` helper, and the concurrent register with its broken
-variant. Batch 2 done: the alternating-bit protocol with its broken
-variant. Batch 3 done: the task queue with two broken variants, and the
-D-010 review (owner decision pending). Owner review of all counterexamples
-is pending.
+**Status: complete (2026-10-05).** Evidence for each exit criterion:
+- Expected outcomes: `models/register_test.go`, `abp_test.go`, and
+  `taskqueue_test.go` pin status, states, transitions, terminal states, and
+  depth at 5–7 sizes per model. The smallest size of each was counted by hand
+  ([CONFORMANCE.md](CONFORMANCE.md)); every size is checked against the
+  reference explorer, and `keys_test.go` checks key injectivity.
+- Broken variants: `TestRegression_StaleReadWithoutInvalidation` (4 steps),
+  `TestRegression_SenderIgnoresAckBit` (5 or 6 steps by capacity), and
+  `TestRegression_TaskQueueBugs` (2 and 5 steps) pin the invariant and the
+  exact action sequence through `internal/tracetest.Expect`, which replays the
+  trace without the engine.
+- Readability: the owner approved all four counterexamples on 2026-10-05.
+- `Bounded`/`Incomplete`: `Exhausted` is returned on one path only (normal
+  completion with no cutoff). `TestNoStopReasonIsExhausted` checks every stop
+  reason's status and printed form; `TestOnlyExhaustedReadsAsVerified` and
+  `TestUnknownStatusIsNotVerified` check `Result.String` (D-013, accepted).
+- D-010 accepted: terminal states are not violations by default.
 
 **Goal.** Realistic bounded protocol models and counterexamples that people
 can read.
@@ -167,6 +178,8 @@ Mitigation: parameterize sizes and record counts for several sizes.
 ---
 
 ## Phase 3: Performance baseline and profiling
+
+**Status: not started.** Needs the owner's explicit authorization.
 
 **Goal.** A trusted, reproducible measurement of the unoptimized engine.
 

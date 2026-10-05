@@ -208,6 +208,10 @@ type Result[S, A any] struct {
 There is deliberately no `OK bool` field. A caller has to switch on `Status`.
 SEMANTICS.md §8.
 
+As implemented (`check/result.go`), `Claim` is a method rather than a field,
+and `Result.String` is the printed form: only `Exhausted` reads as verified,
+and every other status says `NOT VERIFIED` or shows its counterexample (D-013).
+
 ### 3.8 Statistics and instrumentation
 
 The counters from SEMANTICS.md §10 are plain integer fields, incremented
