@@ -1,7 +1,7 @@
 # Roadmap
 
-> Status: plan, not a promise. Current phase: **Phase 1 (in progress)**; Phase 0 decisions accepted 2026-10-04. No
-> engine code exists.
+> Status: plan, not a promise. Current phase: **Phase 2 (not started)**. Phase 0 decisions
+> accepted 2026-10-04; Phase 1 closed 2026-10-05.
 
 ## Timeline estimate
 
@@ -82,6 +82,11 @@ mark those items as proposed and validate them in Phases 3–4.
 ---
 
 ## Phase 1: Correctness-first exploration engine
+
+**Status: complete (2026-10-05).** Every test and exit criterion below has
+passing evidence in `check/` and `core/`: conformance tables, differential
+set and depth checks on all reference models and 1,000 random graphs, and
+`TestNoStopReasonIsExhausted`.
 
 **Goal.** The minimal engine that implements SEMANTICS.md exactly.
 

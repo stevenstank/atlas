@@ -5,7 +5,7 @@ explores every reachable state of a bounded, user-defined model, checks safety
 properties, and produces reproducible counterexample traces when a property is
 violated.
 
-> **Status: Phase 1 in progress.** Phase 0 decisions are accepted
+> **Status: Phase 1 complete; Phase 2 not started.** Phase 0 decisions are accepted
 > ([docs/DECISIONS.md](docs/DECISIONS.md)). The core BFS engine (`core`,
 > `check`) is implemented and tested against the conformance tables in
 > [docs/CONFORMANCE.md](docs/CONFORMANCE.md), an independent reference

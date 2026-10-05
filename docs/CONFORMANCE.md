@@ -1,6 +1,6 @@
 # Conformance models
 
-> Status: hand-worked expectations, written before any engine code exists.
+> Status: hand-worked expectations, written before the engine existed.
 > Phase 1 turns each section into a test. If the engine disagrees with this
 > document, first re-check the arithmetic here, then fix whichever is wrong.
 
