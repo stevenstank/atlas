@@ -47,7 +47,8 @@ stats arithmetic, limit checks, and `Status` / `StopReason` formatting.
   internal test hook that replaces the hash function with a degenerate one
   (constant, then 2-bit). The full differential suite must pass under that
   hook with identical results.
-- **Aliasing detector:** an optional debug mode, used throughout tests. It
+- **Aliasing detector** (`check.Config.DetectMutation`): an optional debug
+  mode, used throughout tests. It
   re-encodes each state when it is expanded and compares the result to the key
   stored at discovery. A mismatch means someone mutated an emitted state and
   is reported as `ModelError`. A deliberately aliasing test model confirms

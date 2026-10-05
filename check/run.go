@@ -108,6 +108,9 @@ func (e *engine[S, A]) run() (res Result[S, A]) {
 			}
 		}
 		it := e.queue.Pop()
+		if e.cfg.DetectMutation && string(e.key(it.state)) != e.store.Key(it.id) {
+			return Result[S, A]{Status: ModelError, Err: ErrStateMutated}
+		}
 		e.stats.Expanded++
 		depth := e.store.Depth(it.id)
 		g := &guard{active: true}

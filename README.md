@@ -6,10 +6,11 @@ properties, and produces reproducible counterexample traces when a property is
 violated.
 
 > **Status: Phase 1 in progress.** Phase 0 decisions are accepted
-> ([docs/DECISIONS.md](docs/DECISIONS.md)). The core BFS engine is being
-> implemented. It is not yet tested, benchmarked, or released. Nothing below
-> describes working functionality unless it is explicitly marked as
-> implemented.
+> ([docs/DECISIONS.md](docs/DECISIONS.md)). The core BFS engine (`core`,
+> `check`) is implemented and tested against the conformance tables in
+> [docs/CONFORMANCE.md](docs/CONFORMANCE.md), an independent reference
+> explorer, and 1,000 random graphs. It is not yet benchmarked or released,
+> and its API may still change.
 
 ## Why
 

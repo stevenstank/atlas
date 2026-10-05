@@ -73,3 +73,31 @@ func (Grid2) AppendKey(buf []byte, c Cell) []byte { return append(buf, byte(c.X)
 
 // Sum is the Grid2 invariant x + y < 4.
 func Sum(c Cell) bool { return c.X+c.Y < 4 }
+
+// GridN is the D-dimensional grid with K values per axis (ROADMAP Phase 1).
+// From the origin, action i increments coordinate i while it is below K-1.
+// It has K^D reachable states, D*(K-1)*K^(D-1) transitions, maximum depth
+// D*(K-1), and one dead end (every coordinate at K-1). States are slices, so
+// Next copies before changing them (D-001 ownership rule).
+type GridN struct{ D, K int }
+
+func (g GridN) Init(emit func([]int) bool) { emit(make([]int, g.D)) }
+
+func (g GridN) Next(s []int, emit func(int, []int) bool) {
+	for i := range s {
+		if s[i] < g.K-1 {
+			t := append([]int(nil), s...)
+			t[i]++
+			if !emit(i, t) {
+				return
+			}
+		}
+	}
+}
+
+func (GridN) AppendKey(buf []byte, s []int) []byte {
+	for _, v := range s {
+		buf = append(buf, byte(v))
+	}
+	return buf
+}

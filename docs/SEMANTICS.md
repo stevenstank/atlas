@@ -224,7 +224,7 @@ Every run ends with exactly one **status**:
 | `Exhausted`   | The frontier emptied, nothing was refused, and no violation was found. | **No reachable state violates any invariant.** |
 | `Bounded`     | The frontier emptied after at least one depth cutoff, or the run stopped at a state-limit refusal. No violation in any admitted state. | No violation among the admitted states, as the claim states. Nothing about excluded states. |
 | `Incomplete`  | Interrupted (cancellation, deadline, memory, capacity) before any of the above. | Nothing conclusive. |
-| `ModelError`  | The model panicked, broke the `emit` contract, was nondeterministic on replay, or emitted no initial states. | Nothing. |
+| `ModelError`  | The model panicked, broke the `emit` contract, was nondeterministic on replay, emitted no initial states, or (with `DetectMutation`) mutated an emitted state. | Nothing. |
 
 Invalid configuration (for example N = 0 or D < 0) is rejected before `Init`
 runs. It is a caller error, reported separately from these five statuses.

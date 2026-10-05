@@ -49,6 +49,11 @@ type Config[S any] struct {
 	// CheckInterval is K in the interruption schedule. 0 means
 	// DefaultCheckInterval. Tests that need deterministic interruption use 1.
 	CheckInterval int
+	// DetectMutation re-encodes each state when it is dequeued and compares
+	// it with the key stored at admission (TESTING.md §3). A mismatch means an
+	// emitted state was mutated, and the run ends with ErrStateMutated. It
+	// costs one extra AppendKey per expansion; intended for tests.
+	DetectMutation bool
 }
 
 func (c *Config[S]) validate() error {

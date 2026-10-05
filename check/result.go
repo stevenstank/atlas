@@ -124,6 +124,7 @@ var (
 	ErrNoInitialStates  = errors.New("check: model emitted no initial states")
 	ErrCallbackContract = errors.New("check: model violated the emit contract")
 	ErrNondeterministic = errors.New("check: model is nondeterministic on replay")
+	ErrStateMutated     = errors.New("check: an emitted state was mutated after emission")
 )
 
 // PanicError is a panic recovered from model code.
