@@ -291,3 +291,36 @@ Re-worked by hand on 2026-10-04 in the order above. Every row, total, and
 bounded case was then cross-checked with a throwaway BFS script kept outside
 the repository. For bounded runs, the script implements the D-012 check order
 exactly. The hand pass and the script agree on all values.
+
+## Concurrent register (Phase 2)
+
+Model: `models.Register` (its doc comment defines the state, actions, emit
+order, and the `NoStaleRead` invariant). Values below are for the correct
+variant, with no limits.
+
+**Hand count, 2 clients × 1 operation.** Write each client's phase as I
+(idle, 1 op left), R (reading), W (writing), or D (done). Classes `(A, B)`:
+
+| Class | States | Why |
+|-------|-------:|-----|
+| (I,I) | 1 | initial |
+| (R,I) (W,I) (I,R) (I,W) | 4 | nothing has completed yet |
+| (R,R) (R,W) (W,R) (W,W) | 4 | same |
+| (D,I) (I,D) | 2 + 2 | A's finished op was a read or a write |
+| (D,R) (R,D) | 3 + 3 | after a write, B's pending read started before or after it finished (different recorded overwritten set) |
+| (D,W) (W,D) | 3 + 3 | after a write, B's write started before or after it (different recorded completed set) |
+| (D,D) | 9 | RR 1; WR and RW 2 each (the read hit the old value before the write, or missed after it); WW 4 (who finished first × overwritten set) |
+
+Total 34 states, 9 of them terminal (the (D,D) class). Out-degree is 2 per
+idle client with an op left and 1 per busy client: 4 + 4·3 + 4·2 + 4·2 +
+6·1 + 6·1 = 44 transitions. Max depth 4. The engine and the reference
+explorer agree.
+
+**Larger sizes** (checked against the reference explorer, not by hand):
+2×2: 449 states, 708 transitions, 61 terminal; 3×1: 325, 534, 49;
+2×3: 3,674, 6,444, 309; 3×2: 25,543, 58,698, 901.
+
+**Broken variant** (`NoInvalidate`): `Violation` of `NoStaleRead` with a
+4-step trace at every size tested (a write must finish and a read must then
+start and finish, so 4 is the minimum). It stops after 28 (2×1), 52 (2×2),
+and 130 (3×2) admitted states, agreeing with the reference explorer.

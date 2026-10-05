@@ -283,6 +283,13 @@ mitigated by printing the terminal-state count in every result.
 **Validation.** Owner decision. A test model with a deliberate deadlock is
 needed in either case.
 
+**Phase 2 observation (2026-10-05, not a decision).** The concurrent-register
+model ends only in legitimate terminal states (every client has finished its
+operations): 9 of 34 states at 2×1, 901 of 25,543 at 3×2. Treating them as
+violations would make every register run fail, so the model gives no reason
+to change the default now. It also has no deliberate deadlock, which the
+validation above still needs.
+
 ## D-011 Module path, Go directive, and package layout — Accepted (2026-10-04)
 
 **Context.** No `go.mod` exists. Two values must be fixed before Phase 1
@@ -696,3 +703,24 @@ The CONFORMANCE.md bound tables and the named tests in TESTING.md §7. In
 random-graph differential tests, use limits equal to the reference
 explorer's maximum depth and to its exact state count (expect `Exhausted`),
 and one less than each (expect `Bounded`).
+
+## D-013 Readable results and traces — Proposed (2026-10-05)
+
+**Context.** Phase 2 needs `String`/`Format` hooks for states and actions,
+and printed results that cannot be mistaken for success.
+
+**Decision.** No new interface. `Trace`, `*Counterexample`, and `Result` gain
+`String` methods. States are printed with `%+v` and actions with `%v`, so a
+model type that implements `fmt.Stringer` or `fmt.Formatter` controls its own
+text, and any other type falls back to fmt's default. `Result.String` starts
+with the status. Only `Exhausted` says "verified". `Bounded`, `Incomplete`,
+`ModelError`, and unknown statuses say "NOT VERIFIED" and the stop reason. A
+`Violation` prints the counterexample. Every result ends with the state,
+transition, and terminal-state counts (the D-010 mitigation).
+
+**Alternatives.** A `Formatter[S, A]` field in `Config`: more flexible, but
+it adds API that fmt already covers. Requiring `String` on every state:
+rejected because Atlas must work with plain types.
+
+**Trace-regression helper.** `internal/tracetest.Expect` is internal, not
+public API: it is a test convenience, and its shape may change.

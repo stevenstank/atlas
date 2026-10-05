@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status: plan, not a promise. Current phase: **Phase 2 (not started)**. Phase 0 decisions
+> Status: plan, not a promise. Current phase: **Phase 2 (in progress)**. Phase 0 decisions
 > accepted 2026-10-04; Phase 1 closed 2026-10-05.
 
 ## Timeline estimate
@@ -125,6 +125,10 @@ Mitigation: key-injectivity tests.
 ---
 
 ## Phase 2: Model-checking functionality and robustness
+
+**Status: in progress.** Batch 1 done: trace formatting (D-013), the
+`internal/tracetest` helper, and the concurrent register with its broken
+variant. Owner review of the register counterexample is pending.
 
 **Goal.** Realistic bounded protocol models and counterexamples that people
 can read.
