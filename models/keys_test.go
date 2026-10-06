@@ -38,6 +38,7 @@ func TestProtocolKeysInjective(t *testing.T) {
 		"abp 4x3":            func() (int, int) { return keyStates(models.ABP{Msgs: 4, Cap: 3}) },
 		"abp 3x2 buggy":      func() (int, int) { return keyStates(models.ABP{Msgs: 3, Cap: 2, IgnoreAckBit: true}) },
 		"queue 4x3x3":        func() (int, int) { return keyStates(models.TaskQueue{Tasks: 4, Workers: 3, Crashes: 3}) },
+		"queue 8x1x1":        func() (int, int) { return keyStates(models.TaskQueue{Tasks: 8, Workers: 1, Crashes: 1}) },
 		"queue 3x3x2 buggy": func() (int, int) {
 			return keyStates(models.TaskQueue{Tasks: 3, Workers: 3, Crashes: 2, Bug: models.NonIdempotent})
 		},

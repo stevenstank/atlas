@@ -109,7 +109,7 @@ func TestTaskQueueBugsNeedACrash(t *testing.T) {
 
 func TestTaskQueueFormatting(t *testing.T) {
 	s := models.QueueState{T: 3, W: 2, CrashesLeft: 1,
-		Tasks:   [4]models.QTask{{Acked: true}, {Runs: 2}, {Acked: true, Runs: 1}},
+		Tasks:   [8]models.QTask{{Acked: true}, {Runs: 2}, {Acked: true, Runs: 1}},
 		Workers: [3]models.QWorker{{Phase: models.QRan, Task: 1}}}
 	const want = "t0 acked runs=0, t1 held runs=2, t2 acked runs=1 | A ran t1 | B idle | crashes left 1" +
 		" | LOST: a task was acked but never run, and no worker holds it | DOUBLE: a task's effect was applied twice"
@@ -128,7 +128,28 @@ func TestTaskQueueFormatting(t *testing.T) {
 }
 
 func TestTaskQueueRejectsBadSize(t *testing.T) {
-	if res := runQueue(t, models.TaskQueue{Tasks: 5, Workers: 1}); res.Status != check.ModelError {
+	if res := runQueue(t, models.TaskQueue{Tasks: 9, Workers: 1}); res.Status != check.ModelError {
 		t.Errorf("status = %v, want ModelError", res.Status)
+	}
+}
+
+// The capacity went from 4 to 8 tasks (DECISIONS.md D-014). The key still
+// encodes only the first T tasks, so its bytes, and every count above for
+// T <= 4, are unchanged. An 8-task queue is accepted and agrees with the
+// reference explorer.
+func TestTaskQueueCapacityExtension(t *testing.T) {
+	m := models.TaskQueue{Tasks: 2, Workers: 1}
+	var key []byte
+	m.Init(func(s models.QueueState) bool { key = m.AppendKey(nil, s); return true })
+	// T, W, crashes left; (runs, acked) per task; (phase, task) per worker.
+	if want := []byte{2, 1, 0, 0, 0, 0, 0, 0, 0}; string(key) != string(want) {
+		t.Errorf("initial key = %v, want %v", key, want)
+	}
+	big := models.TaskQueue{Tasks: 8, Workers: 1, Crashes: 1}
+	res := runQueue(t, big)
+	ref := reference.Explore(big, queueHolds, -1, -1)
+	if res.Status != check.Exhausted || res.Stats.Admitted != 13824 || res.Stats.Transitions != 20992 ||
+		int64(ref.Admitted) != res.Stats.Admitted || int64(ref.Edges) != res.Stats.Transitions {
+		t.Errorf("8x1x1: %v; reference %d/%d", res, ref.Admitted, ref.Edges)
 	}
 }

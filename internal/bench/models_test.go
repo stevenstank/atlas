@@ -165,3 +165,32 @@ func TestEarlyCloseReplay(t *testing.T) {
 		t.Errorf("TaskQueue 4x1x1: %v", ok.Status)
 	}
 }
+
+// TestB7Oracle establishes B7's expected result with both explorers and
+// replays its trace. The scaling rows show the shortest counterexample
+// growing with the workload (3T-3 steps for 2 workers and 1 crash), unlike
+// the Phase 2 bugs, which fail in 2 or 5 steps at every size.
+func TestB7Oracle(t *testing.T) {
+	cfg := check.Config[bench.ECState]{Invariants: []check.Invariant[bench.ECState]{b7Inv}}
+	for _, c := range []struct {
+		tasks         int
+		states, trans int64
+		depth         int
+	}{{2, 21, 25, 3}, {4, 1229, 3017, 9}, {6, 18013, 50529, 15}, {8, 166581, 486921, 21}} {
+		m := bench.EarlyClose{TaskQueue: models.TaskQueue{Tasks: c.tasks, Workers: 2, Crashes: 1}}
+		res, _ := check.Run(context.Background(), m, cfg)
+		ref := reference.Explore(m, bench.ECNoLostTask, -1, -1)
+		if res.Status != check.Violation || res.Stats.Admitted != c.states || res.Stats.Transitions != c.trans ||
+			len(res.Violation.Trace.Steps)-1 != c.depth || c.depth != 3*c.tasks-3 || ref.Status != "Violation" ||
+			int64(ref.Admitted) != c.states || int64(ref.Transitions) != c.trans || ref.ViolationDepth != c.depth {
+			t.Errorf("T=%d: engine %v %d/%d; reference %s %d/%d depth %d; want %d/%d depth %d", c.tasks, res.Status,
+				res.Stats.Admitted, res.Stats.Transitions, ref.Status, ref.Admitted, ref.Transitions, ref.ViolationDepth, c.states, c.trans, c.depth)
+		}
+		if c.tasks == 8 {
+			if err := bench.Check(b7Want, res); err != nil {
+				t.Error(err)
+			}
+			tracetest.Expect(t, m, b7Inv, res, b7Trace()...)
+		}
+	}
+}

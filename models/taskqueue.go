@@ -43,7 +43,7 @@ import (
 // decreases, and the other fields take a few values each. Without crashes
 // every task is taken, run, and acked once; each crash adds at most one retry.
 type TaskQueue struct {
-	Tasks, Workers, Crashes int // 1-4 tasks, 1-3 workers, 0-9 crashes
+	Tasks, Workers, Crashes int // 1-8 tasks, 1-3 workers, 0-9 crashes
 	Bug                     QueueBug
 }
 
@@ -80,7 +80,7 @@ type QTask struct {
 // QueueState is a TaskQueue state. Unused slots stay zero.
 type QueueState struct {
 	T, W        uint8
-	Tasks       [4]QTask
+	Tasks       [8]QTask
 	Workers     [3]QWorker
 	CrashesLeft uint8
 }
@@ -107,8 +107,8 @@ type QAction struct {
 }
 
 func (q TaskQueue) Init(emit func(QueueState) bool) {
-	if q.Tasks < 1 || q.Tasks > 4 || q.Workers < 1 || q.Workers > 3 || q.Crashes < 0 || q.Crashes > 9 {
-		panic(fmt.Sprintf("models: TaskQueue needs 1-4 tasks, 1-3 workers, 0-9 crashes, got %d, %d, %d", q.Tasks, q.Workers, q.Crashes))
+	if q.Tasks < 1 || q.Tasks > 8 || q.Workers < 1 || q.Workers > 3 || q.Crashes < 0 || q.Crashes > 9 {
+		panic(fmt.Sprintf("models: TaskQueue needs 1-8 tasks, 1-3 workers, 0-9 crashes, got %d, %d, %d", q.Tasks, q.Workers, q.Crashes))
 	}
 	emit(QueueState{T: uint8(q.Tasks), W: uint8(q.Workers), CrashesLeft: uint8(q.Crashes)})
 }

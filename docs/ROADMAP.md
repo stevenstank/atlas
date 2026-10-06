@@ -182,8 +182,8 @@ Mitigation: parameterize sizes and record counts for several sizes.
 **Status: in progress.** Batch 1 done: the `internal/bench` harness
 skeleton with checked benchmarks for B1, B2, and B4. Batch 2: B3 (8-puzzle)
 and B5 (two-phase commit) added with their oracles; B6 (ABP, 3 messages) and
-B8 (padded GridN) added. B7 waits on an owner decision about the TaskQueue
-task cap. No results published.
+B8 (padded GridN) added. B7 (TaskQueue EarlyClose, 8 tasks; task cap raised to 8 by D-014)
+added. B1–B8 are ready; V1 is not chosen. No results published.
 
 **Goal.** A trusted, reproducible measurement of the unoptimized engine.
 

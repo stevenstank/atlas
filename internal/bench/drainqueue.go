@@ -48,7 +48,7 @@ func (e EarlyClose) Init(emit func(ECState) bool) {
 }
 
 func (e EarlyClose) Next(s ECState, emit func(ECAction, ECState) bool) {
-	closed := s.Delivered == 1<<s.Q.T-1
+	closed := uint16(s.Delivered) == 1<<uint16(s.Q.T)-1 // Delivered holds up to 8 tasks
 	e.TaskQueue.Next(s.Q, func(a models.QAction, q models.QueueState) bool {
 		t := ECState{Q: q, Delivered: s.Delivered}
 		if a.Kind == models.QTake {

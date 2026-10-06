@@ -157,3 +157,29 @@ func BenchmarkB8PaddedGrid(b *testing.B) {
 		}
 	}
 }
+
+// B7: EarlyClose with 8 tasks, 2 workers, 1 crash. Counts and the 21-step
+// trace were recorded from the reference explorer, which agrees with the
+// engine, before any measurement (TestB7Oracle).
+var (
+	b7Model = bench.EarlyClose{TaskQueue: models.TaskQueue{Tasks: 8, Workers: 2, Crashes: 1}}
+	b7Inv   = check.Invariant[bench.ECState]{Name: "NoLostTask", Holds: bench.ECNoLostTask}
+	b7Want  = bench.Want{Status: check.Violation, States: 166581, Transitions: 486921, Invariant: "NoLostTask", TraceLen: 21}
+)
+
+// b7Trace is the expected shortest counterexample: A carries t0..t5 through
+// take, run, and ack; A and B take the last two tasks, which closes the
+// queue; A crashes and t6 is dropped.
+func b7Trace() []string {
+	var tr []string
+	for i := range 6 {
+		tr = append(tr, fmt.Sprintf("A takes t%d", i), fmt.Sprintf("A runs t%d: effect applied (run 1)", i), fmt.Sprintf("A acks t%d: done", i))
+	}
+	return append(tr, "A takes t6", "B takes t7",
+		"A crashes holding t6; the queue is closed (every task delivered), so t6 is dropped")
+}
+
+func BenchmarkB7EarlyClose(b *testing.B) {
+	res := runChecked(b, b7Model, check.Config[bench.ECState]{Invariants: []check.Invariant[bench.ECState]{b7Inv}}, b7Want)
+	tracetest.Expect(b, b7Model, b7Inv, res, b7Trace()...)
+}

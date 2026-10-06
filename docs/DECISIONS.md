@@ -10,7 +10,8 @@ Lightweight ADRs. Each record has a status:
 On 2026-10-04 the owner explicitly accepted D-001 (option 3b), D-002, D-003
 (baseline layout), D-004, D-005, D-006, D-011, and D-012. That meets the
 Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). On 2026-10-05 the owner
-accepted D-010 and D-013 at the Phase 2 review. The other records keep the
+accepted D-010 and D-013 at the Phase 2 review, and on 2026-10-06
+D-014 for benchmark B7. The other records keep the
 status shown in their headings.
 
 ## Phase 0 decisions (accepted 2026-10-04)
@@ -749,3 +750,22 @@ public API: it is a test convenience, and its shape may change.
 
 **Accepted 2026-10-05** by the owner as implemented in Phase 2 batch 1, after
 reviewing the four deliberate-bug counterexamples printed in this format.
+
+## D-014 TaskQueue task capacity raised to 8 — Accepted (2026-10-06)
+
+**Context.** Benchmark B7 needs a deep counterexample in a large space
+([BENCHMARKS.md](BENCHMARKS.md) §3). Its task-queue bug (`EarlyClose` in
+`internal/bench`) has a shortest trace that grows with the number of tasks,
+but `models.TaskQueue` held at most 4 tasks: 11 steps after 407 states at
+most.
+
+**Decision (owner, 2026-10-06).** `QueueState.Tasks` changes from
+`[4]QTask` to `[8]QTask`, and `TaskQueue` accepts 1–8 tasks. This is a
+public API change to a Phase 2 model. Nothing else changes: the actions,
+invariants, broken variants, and key encoding are the same, and the key
+still encodes only the first T tasks. Every Phase 2 expected count is
+unchanged (`models/taskqueue_test.go`).
+
+**Alternatives.** A copy of the queue inside `internal/bench`, which would
+leave B7 on a different model from Phase 2's; or B7 at 4 tasks, which does
+not give a large space.
