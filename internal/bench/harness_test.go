@@ -94,7 +94,7 @@ func TestSuiteTable(t *testing.T) {
 		}
 		ready[e.ID] = e.Ready
 	}
-	want := map[string]bool{"B1": true, "B2": true, "B3": false, "B4": true, "B5": false, "B6": false, "B7": false, "B8": false, "V1": false}
+	want := map[string]bool{"B1": true, "B2": true, "B3": true, "B4": true, "B5": true, "B6": false, "B7": false, "B8": false, "V1": false}
 	for id, r := range want {
 		if got, ok := ready[id]; !ok || got != r {
 			t.Errorf("%s: ready = %v (present %v), want %v", id, got, ok, r)

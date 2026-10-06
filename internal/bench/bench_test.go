@@ -90,3 +90,30 @@ func BenchmarkB4Jugs(b *testing.B) {
 	tracetest.Expect(b, models.Jugs{}, inv, res,
 		"FillBig", "BigToSmall", "EmptySmall", "BigToSmall", "FillBig", "BigToSmall")
 }
+
+// B3: the 8-puzzle, 181,440 states (9!/2, TESTING.md §1) and 483,840
+// transitions (TestPuzzle8Counts derives both).
+func BenchmarkB3Puzzle8(b *testing.B) {
+	runChecked(b, bench.Puzzle8{}, check.Config[bench.Board]{},
+		bench.Want{Status: check.Exhausted, States: 181440, Transitions: 483840})
+}
+
+// b5Counts are the TwoPhase counts with TCConsistent checked, recorded from
+// the reference explorer (BENCHMARKS.md §3) before any measurement;
+// TestTwoPhaseCounts re-checks them against both explorers.
+var b5Counts = []struct {
+	n                   int
+	states, transitions int64
+}{{3, 288, 761}, {4, 1568, 5377}, {5, 8832, 37345}, {6, 50816, 256001}}
+
+var tcConsistent = []check.Invariant[bench.TPState]{{Name: "TCConsistent", Holds: bench.TCConsistent}}
+
+// B5: two-phase commit with N = 3..6 resource managers.
+func BenchmarkB5TwoPhase(b *testing.B) {
+	for _, c := range b5Counts {
+		b.Run(fmt.Sprintf("N=%d", c.n), func(b *testing.B) {
+			runChecked(b, bench.TwoPhase{N: c.n}, check.Config[bench.TPState]{Invariants: tcConsistent},
+				bench.Want{Status: check.Exhausted, States: c.states, Transitions: c.transitions})
+		})
+	}
+}

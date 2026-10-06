@@ -28,12 +28,12 @@ type Entry struct {
 var Suite = []Entry{
 	{ID: "B1", Model: "Grid2", Params: "fixed", Ready: true},
 	{ID: "B2", Model: "GridN", Params: "D=4, K in {10,20,40}", Ready: true},
-	{ID: "B3", Model: "8-puzzle", Params: "fixed", Deferred: "model does not exist yet"},
+	{ID: "B3", Model: "8-puzzle (Puzzle8)", Params: "fixed", Ready: true},
 	{ID: "B4", Model: "Water jugs", Params: "big 5 L, small 3 L", Ready: true},
-	{ID: "B5", Model: "Two-phase commit", Params: "N RMs in {3,4,5,6}", Deferred: "model does not exist; no Phase 2 record"},
-	{ID: "B6", Model: "Message passing (bounded, lossy)", Params: "channel cap in {2,3,4}", Deferred: "model and message count not decided"},
-	{ID: "B7", Model: "Task queue, broken variant", Params: "workers/tasks scaled", Deferred: "variant and sizes not decided"},
-	{ID: "B8", Model: "GridN + padded payload", Params: "payload in {0,64,256} B", Deferred: "padded model does not exist yet"},
+	{ID: "B5", Model: "Two-phase commit (TwoPhase)", Params: "N RMs in {3,4,5,6}", Ready: true},
+	{ID: "B6", Model: "Message passing (bounded, lossy)", Params: "channel cap in {2,3,4}", Deferred: "spec gives no message count, and its \"count from Phase 2 record\" and \"larger\" states do not fit ABP at cap 4 (owner decision)"},
+	{ID: "B7", Model: "Task queue, broken variant", Params: "workers/tasks scaled", Deferred: "Phase 2 task-queue traces are 2 or 5 steps at every size, contradicting \"deep counterexample in a large space\" (owner decision)"},
+	{ID: "B8", Model: "GridN + padded payload", Params: "payload in {0,64,256} B", Deferred: "PaddedGrid exists; spec gives no D and K (owner decision)"},
 	{ID: "V1", Model: "held-out validation model", Params: "chosen in Phase 3", Deferred: "not chosen yet"},
 }
 
