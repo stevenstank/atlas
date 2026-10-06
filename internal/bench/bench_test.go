@@ -100,7 +100,9 @@ func BenchmarkB3Puzzle8(b *testing.B) {
 
 // b5Counts are the TwoPhase counts with TCConsistent checked, recorded from
 // the reference explorer (BENCHMARKS.md §3) before any measurement;
-// TestTwoPhaseCounts re-checks them against both explorers.
+// TestTwoPhaseCounts re-checks them against both explorers. BENCHMARKS.md
+// says "count from Phase 2 record", but Phase 2 built no two-phase commit
+// model: there is no such record.
 var b5Counts = []struct {
 	n                   int
 	states, transitions int64
@@ -115,5 +117,43 @@ func BenchmarkB5TwoPhase(b *testing.B) {
 			runChecked(b, bench.TwoPhase{N: c.n}, check.Config[bench.TPState]{Invariants: tcConsistent},
 				bench.Want{Status: check.Exhausted, States: c.states, Transitions: c.transitions})
 		})
+	}
+}
+
+// b6Counts are models.ABP with 3 messages and both Phase 2 invariants. Caps 2
+// and 3 equal the Phase 2 records (docs/CONFORMANCE.md, 3×2 and 3×3); cap 4
+// was recorded from the reference explorer before any measurement.
+// TestABPBenchCounts re-checks all three against both explorers.
+var b6Counts = []struct {
+	cap                 int
+	states, transitions int64
+}{{2, 81, 299}, {3, 172, 775}, {4, 315, 1577}}
+
+var abpInvariants = []check.Invariant[models.ABPState]{
+	{Name: "InOrderDelivery", Holds: models.InOrderDelivery},
+	{Name: "AckedDelivered", Holds: models.AckedDelivered},
+}
+
+// B6: bounded lossy message passing; see the B6 entry in bench.Suite.
+func BenchmarkB6ABP(b *testing.B) {
+	for _, c := range b6Counts {
+		b.Run(fmt.Sprintf("cap=%d", c.cap), func(b *testing.B) {
+			runChecked(b, models.ABP{Msgs: 3, Cap: c.cap}, check.Config[models.ABPState]{Invariants: abpInvariants},
+				bench.Want{Status: check.Exhausted, States: c.states, Transitions: c.transitions})
+		})
+	}
+}
+
+// B8: PaddedGrid at B2's sizes. The payload changes no count, so the
+// expected values are GridN's analytic ones (TestPaddedGridMatchesGridN).
+func BenchmarkB8PaddedGrid(b *testing.B) {
+	for _, pad := range []int{64, 256} {
+		for _, k := range []int{10, 20, 40} {
+			kd := int64(k * k * k)
+			want := bench.Want{Status: check.Exhausted, States: kd * int64(k), Transitions: 4 * int64(k-1) * kd}
+			b.Run(fmt.Sprintf("pad=%d/K=%d", pad, k), func(b *testing.B) {
+				runChecked(b, bench.PaddedGrid{D: 4, K: k, Pad: pad}, check.Config[[]byte]{}, want)
+			})
+		}
 	}
 }

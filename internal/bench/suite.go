@@ -31,9 +31,12 @@ var Suite = []Entry{
 	{ID: "B3", Model: "8-puzzle (Puzzle8)", Params: "fixed", Ready: true},
 	{ID: "B4", Model: "Water jugs", Params: "big 5 L, small 3 L", Ready: true},
 	{ID: "B5", Model: "Two-phase commit (TwoPhase)", Params: "N RMs in {3,4,5,6}", Ready: true},
-	{ID: "B6", Model: "Message passing (bounded, lossy)", Params: "channel cap in {2,3,4}", Deferred: "spec gives no message count, and its \"count from Phase 2 record\" and \"larger\" states do not fit ABP at cap 4 (owner decision)"},
-	{ID: "B7", Model: "Task queue, broken variant", Params: "workers/tasks scaled", Deferred: "Phase 2 task-queue traces are 2 or 5 steps at every size, contradicting \"deep counterexample in a large space\" (owner decision)"},
-	{ID: "B8", Model: "GridN + padded payload", Params: "payload in {0,64,256} B", Deferred: "PaddedGrid exists; spec gives no D and K (owner decision)"},
+	// B6 uses the existing bounded ABP model as the repository's bounded
+	// message-passing workload. Capacity varies across 2, 3, and 4; the
+	// model representation itself is fixed-size.
+	{ID: "B6", Model: "Message passing (models.ABP)", Params: "3 messages, channel cap in {2,3,4}", Ready: true},
+	{ID: "B7", Model: "Task queue, broken variant", Params: "workers/tasks scaled", Deferred: "EarlyClose is deep, but models.TaskQueue caps tasks at 4 (at most 11 steps after 407 states); a large space needs a higher cap (owner decision)"},
+	{ID: "B8", Model: "GridN + padded payload (PaddedGrid)", Params: "D=4, K in {10,20,40}, payload in {64,256} B", Ready: true},
 	{ID: "V1", Model: "held-out validation model", Params: "chosen in Phase 3", Deferred: "not chosen yet"},
 }
 
