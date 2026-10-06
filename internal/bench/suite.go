@@ -52,28 +52,51 @@ type Want struct {
 	// when Status is Violation.
 	Invariant string
 	TraceLen  int
+	// Trace is the expected action sequence, replayed after timing
+	// (tracetest.Replay); nil means no replay.
+	Trace []string
+}
+
+// Summary is what Want checks, taken from a check.Result.
+type Summary struct {
+	Status              check.Status
+	States, Transitions int64
+	Invariant           string // "" unless Status is Violation
+	TraceLen            int    // -1 unless Status is Violation
+}
+
+// Summarize extracts the Summary of res.
+func Summarize[S, A any](res check.Result[S, A]) Summary {
+	s := Summary{Status: res.Status, States: res.Stats.Admitted, Transitions: res.Stats.Transitions, TraceLen: -1}
+	if v := res.Violation; v != nil {
+		s.Invariant, s.TraceLen = v.Invariant, len(v.Trace.Steps)-1
+	}
+	return s
 }
 
 // Check returns an error describing every way res differs from w.
-func Check[S, A any](w Want, res check.Result[S, A]) error {
+func Check[S, A any](w Want, res check.Result[S, A]) error { return w.Check(Summarize(res)) }
+
+// Check returns an error describing every way s differs from w.
+func (w Want) Check(s Summary) error {
 	var errs []string
-	if res.Status != w.Status {
-		errs = append(errs, fmt.Sprintf("status %v, want %v", res.Status, w.Status))
+	if s.Status != w.Status {
+		errs = append(errs, fmt.Sprintf("status %v, want %v", s.Status, w.Status))
 	}
-	if res.Stats.Admitted != w.States {
-		errs = append(errs, fmt.Sprintf("states discovered (Stats.Admitted) %d, want %d", res.Stats.Admitted, w.States))
+	if s.States != w.States {
+		errs = append(errs, fmt.Sprintf("states discovered (Stats.Admitted) %d, want %d", s.States, w.States))
 	}
-	if w.Transitions >= 0 && res.Stats.Transitions != w.Transitions {
-		errs = append(errs, fmt.Sprintf("transitions %d, want %d", res.Stats.Transitions, w.Transitions))
+	if w.Transitions >= 0 && s.Transitions != w.Transitions {
+		errs = append(errs, fmt.Sprintf("transitions %d, want %d", s.Transitions, w.Transitions))
 	}
 	if w.Status == check.Violation {
-		switch v := res.Violation; {
-		case v == nil:
+		switch {
+		case s.TraceLen < 0:
 			errs = append(errs, "no counterexample")
-		case v.Invariant != w.Invariant:
-			errs = append(errs, fmt.Sprintf("invariant %q, want %q", v.Invariant, w.Invariant))
-		case len(v.Trace.Steps)-1 != w.TraceLen:
-			errs = append(errs, fmt.Sprintf("trace length %d, want %d", len(v.Trace.Steps)-1, w.TraceLen))
+		case s.Invariant != w.Invariant:
+			errs = append(errs, fmt.Sprintf("invariant %q, want %q", s.Invariant, w.Invariant))
+		case s.TraceLen != w.TraceLen:
+			errs = append(errs, fmt.Sprintf("trace length %d, want %d", s.TraceLen, w.TraceLen))
 		}
 	}
 	if errs == nil {

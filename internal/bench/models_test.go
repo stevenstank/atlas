@@ -2,6 +2,7 @@ package bench_test
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stevenstank/atlas/check"
@@ -52,19 +53,22 @@ func TestPuzzle8Counts(t *testing.T) {
 // 12 states, 14 transitions, 4 terminal states (every aborted or committed
 // end), depth 4. The larger sizes are checked against the reference
 // explorer, which BENCHMARKS.md §3 names as the oracle for B5.
+var tcConsistent = []check.Invariant[bench.TPState]{{Name: "TCConsistent", Holds: bench.TCConsistent}}
+
 func TestTwoPhaseCounts(t *testing.T) {
 	inv := check.Config[bench.TPState]{Invariants: tcConsistent, DetectMutation: true}
 	if s := mustRun(t, bench.TwoPhase{N: 1}, inv); s.Admitted != 12 || s.Transitions != 14 || s.TerminalStates != 4 || s.MaxDepth != 4 {
 		t.Errorf("N=1: %+v", s)
 	}
-	for _, c := range b5Counts {
-		m := bench.TwoPhase{N: c.n}
+	for n := 3; n <= 6; n++ {
+		c := mustFind(t, fmt.Sprintf("B5/n=%d", n)).Want
+		m := bench.TwoPhase{N: n}
 		s := mustRun(t, m, inv)
 		ref := reference.Explore(m, bench.TCConsistent, -1, -1)
-		if s.Admitted != c.states || s.Transitions != c.transitions ||
-			ref.Status != "Exhausted" || int64(ref.Admitted) != c.states || int64(ref.Edges) != c.transitions {
+		if s.Admitted != c.States || s.Transitions != c.Transitions ||
+			ref.Status != "Exhausted" || int64(ref.Admitted) != c.States || int64(ref.Edges) != c.Transitions {
 			t.Errorf("N=%d: engine %d/%d, reference %s %d/%d, recorded %d/%d",
-				c.n, s.Admitted, s.Transitions, ref.Status, ref.Admitted, ref.Edges, c.states, c.transitions)
+				n, s.Admitted, s.Transitions, ref.Status, ref.Admitted, ref.Edges, c.States, c.Transitions)
 		}
 	}
 }
@@ -113,14 +117,17 @@ func TestPaddedGridMatchesGridN(t *testing.T) {
 
 func TestABPBenchCounts(t *testing.T) {
 	holds := func(s models.ABPState) bool { return models.InOrderDelivery(s) && models.AckedDelivered(s) }
-	for _, c := range b6Counts {
-		m := models.ABP{Msgs: 3, Cap: c.cap}
+	abpInvariants := []check.Invariant[models.ABPState]{
+		{Name: "InOrderDelivery", Holds: models.InOrderDelivery}, {Name: "AckedDelivered", Holds: models.AckedDelivered}}
+	for capacity := 2; capacity <= 4; capacity++ {
+		c := mustFind(t, fmt.Sprintf("B6/cap=%d", capacity)).Want
+		m := models.ABP{Msgs: 3, Cap: capacity}
 		s := mustRun(t, m, check.Config[models.ABPState]{Invariants: abpInvariants, DetectMutation: true})
 		ref := reference.Explore(m, holds, -1, -1)
-		if s.Admitted != c.states || s.Transitions != c.transitions ||
-			ref.Status != "Exhausted" || int64(ref.Admitted) != c.states || int64(ref.Edges) != c.transitions {
+		if s.Admitted != c.States || s.Transitions != c.Transitions ||
+			ref.Status != "Exhausted" || int64(ref.Admitted) != c.States || int64(ref.Edges) != c.Transitions {
 			t.Errorf("cap %d: engine %d/%d, reference %s %d/%d, recorded %d/%d",
-				c.cap, s.Admitted, s.Transitions, ref.Status, ref.Admitted, ref.Edges, c.states, c.transitions)
+				capacity, s.Admitted, s.Transitions, ref.Status, ref.Admitted, ref.Edges, c.States, c.Transitions)
 		}
 	}
 }
@@ -171,7 +178,8 @@ func TestEarlyCloseReplay(t *testing.T) {
 // growing with the workload (3T-3 steps for 2 workers and 1 crash), unlike
 // the Phase 2 bugs, which fail in 2 or 5 steps at every size.
 func TestB7Oracle(t *testing.T) {
-	cfg := check.Config[bench.ECState]{Invariants: []check.Invariant[bench.ECState]{b7Inv}}
+	b7Want := mustFind(t, "B7").Want
+	cfg := check.Config[bench.ECState]{Invariants: []check.Invariant[bench.ECState]{ecNoLost}}
 	for _, c := range []struct {
 		tasks         int
 		states, trans int64
@@ -190,7 +198,7 @@ func TestB7Oracle(t *testing.T) {
 			if err := bench.Check(b7Want, res); err != nil {
 				t.Error(err)
 			}
-			tracetest.Expect(t, m, b7Inv, res, b7Trace()...)
+			tracetest.Expect(t, m, ecNoLost, res, b7Want.Trace...)
 		}
 	}
 }

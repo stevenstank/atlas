@@ -183,7 +183,9 @@ Mitigation: parameterize sizes and record counts for several sizes.
 skeleton with checked benchmarks for B1, B2, and B4. Batch 2: B3 (8-puzzle)
 and B5 (two-phase commit) added with their oracles; B6 (ABP, 3 messages) and
 B8 (padded GridN) added. B7 (TaskQueue EarlyClose, 8 tasks; task cap raised to 8 by D-014)
-added. B1–B8 are ready; V1 is not chosen. No results published.
+added. B1–B8 are ready; V1 is not chosen. Batch 3: the one-shot driver
+`internal/bench/cmd/atlasbench` (result check, replay, timing, peak RSS,
+profiles). No results published.
 
 **Goal.** A trusted, reproducible measurement of the unoptimized engine.
 

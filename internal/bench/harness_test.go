@@ -7,7 +7,6 @@ import (
 
 	"github.com/stevenstank/atlas/check"
 	"github.com/stevenstank/atlas/internal/bench"
-	"github.com/stevenstank/atlas/internal/tracetest"
 	"github.com/stevenstank/atlas/models"
 )
 
@@ -56,14 +55,24 @@ func TestCheck(t *testing.T) {
 	}
 }
 
+func mustFind(t testing.TB, name string) bench.Workload {
+	t.Helper()
+	w, err := bench.Find(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return w
+}
+
 // A benchmark with a wrong expected state count fails through the same
 // runChecked path the real benchmarks use. testing.Benchmark returns a zero
 // result (N == 0) for a benchmark that failed.
 func TestBenchmarkFailsOnWrongCount(t *testing.T) {
-	wrong := grid2Want
-	wrong.States = 10
-	for name, w := range map[string]bench.Want{"correct": grid2Want, "wrong count": wrong} {
-		r := testing.Benchmark(func(b *testing.B) { runChecked(b, models.Origin, check.Config[models.Cell]{}, w) })
+	good := mustFind(t, "B1")
+	wrong := good
+	wrong.Want.States = 10
+	for name, w := range map[string]bench.Workload{"correct": good, "wrong count": wrong} {
+		r := testing.Benchmark(func(b *testing.B) { runChecked(b, w) })
 		if failed := r.N == 0; failed != (name == "wrong count") {
 			t.Errorf("%s: failed = %v (N = %d)", name, failed, r.N)
 		}
@@ -73,16 +82,48 @@ func TestBenchmarkFailsOnWrongCount(t *testing.T) {
 	}
 }
 
-// B4's replay check (tracetest.Expect with a *testing.B) fails on a wrong
-// expected action.
+// B4's replay, run by runChecked after timing, fails on a wrong expected
+// action.
 func TestBenchmarkReplayFailsOnWrongTrace(t *testing.T) {
-	inv := notFour[0]
-	r := testing.Benchmark(func(b *testing.B) {
-		res := runChecked(b, models.Jugs{}, check.Config[models.Jug]{Invariants: notFour}, jugsWant)
-		tracetest.Expect(b, models.Jugs{}, inv, res, "FillBig", "BigToSmall", "EmptySmall", "BigToSmall", "FillBig", "FillSmall")
-	})
-	if r.N != 0 {
+	w := mustFind(t, "B4")
+	w.Want.Trace = append(append([]string{}, w.Want.Trace[:5]...), "FillSmall")
+	if r := testing.Benchmark(func(b *testing.B) { runChecked(b, w) }); r.N != 0 {
 		t.Errorf("replay with a wrong action did not fail the benchmark")
+	}
+}
+
+// Every ready suite entry has workloads, names are unique, and Find rejects
+// what it cannot resolve without guessing.
+func TestWorkloads(t *testing.T) {
+	names := map[string]bool{}
+	ids := map[string]int{}
+	for _, w := range bench.Workloads() {
+		if names[w.Name()] {
+			t.Errorf("duplicate workload %s", w.Name())
+		}
+		names[w.Name()] = true
+		ids[w.ID]++
+	}
+	for _, e := range bench.Suite {
+		if e.Ready != (ids[e.ID] > 0) {
+			t.Errorf("%s: ready = %v but %d workloads", e.ID, e.Ready, ids[e.ID])
+		}
+	}
+	for id, n := range map[string]int{"B1": 1, "B2": 3, "B3": 1, "B4": 1, "B5": 4, "B6": 3, "B7": 1, "B8": 6} {
+		if ids[id] != n {
+			t.Errorf("%s: %d workloads, want %d", id, ids[id], n)
+		}
+	}
+	if w := mustFind(t, "B8/pad=256/k=40"); w.Param("d") != 4 || w.Param("k") != 40 || w.Param("pad") != 256 || w.Param("x") != -1 {
+		t.Errorf("B8 params: %v", w.Params())
+	}
+	for name, msg := range map[string]string{
+		"B2": "needs parameters", "B8/pad=64": "needs parameters", "B2/k=11": "unknown workload",
+		"B9": "unknown workload", "": "unknown workload", "b1": "unknown workload",
+	} {
+		if _, err := bench.Find(name); err == nil || !strings.Contains(err.Error(), msg) {
+			t.Errorf("Find(%q) = %v, want %q", name, err, msg)
+		}
 	}
 }
 
