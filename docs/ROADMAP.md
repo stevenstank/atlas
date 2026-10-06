@@ -1,6 +1,6 @@
 # Roadmap
 
-> Status: plan, not a promise. Current phase: **Phase 3 (not started)**. Phase 0 decisions
+> Status: plan, not a promise. Current phase: **Phase 3 (in progress)**. Phase 0 decisions
 > accepted 2026-10-04; Phase 1 and Phase 2 closed 2026-10-05.
 
 ## Timeline estimate
@@ -179,7 +179,8 @@ Mitigation: parameterize sizes and record counts for several sizes.
 
 ## Phase 3: Performance baseline and profiling
 
-**Status: not started.** Needs the owner's explicit authorization.
+**Status: in progress.** Batch 1 done: the `internal/bench` harness
+skeleton with checked benchmarks for B1, B2, and B4. No results published.
 
 **Goal.** A trusted, reproducible measurement of the unoptimized engine.
 
