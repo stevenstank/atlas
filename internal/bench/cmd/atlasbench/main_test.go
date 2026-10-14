@@ -122,6 +122,35 @@ func TestList(t *testing.T) {
 	}
 }
 
+// -plan prints bench.Plan over the shared workload table and measures
+// nothing; it needs an explicit seed.
+func TestPlan(t *testing.T) {
+	var out, errb bytes.Buffer
+	if code := run([]string{"-plan", "-seed", "7", "-rounds", "2"}, &out, &errb); code != 0 {
+		t.Fatalf("exit %d: %s", code, errb.String())
+	}
+	var names []string
+	for _, w := range bench.Workloads() {
+		names = append(names, w.Name())
+	}
+	want := bench.PlanHeader + "\n"
+	for _, e := range bench.Plan(names, 2, 7) {
+		want += e.String() + "\n"
+	}
+	if out.String() != want {
+		t.Errorf("-plan output:\n%s\nwant:\n%s", out.String(), want)
+	}
+	for _, args := range [][]string{
+		{"-plan"}, {"-plan", "-seed", "1", "-rounds", "0"}, {"-plan", "-seed", "1", "-list"},
+		{"-plan", "-seed", "1", "-bench", "B1"}, {"-plan", "-seed", "x"},
+	} {
+		var o, e bytes.Buffer
+		if code := run(args, &o, &e); code != 2 || o.Len() != 0 || e.Len() == 0 {
+			t.Errorf("%q: exit %d, stdout %q, stderr %q", args, code, o.String(), e.String())
+		}
+	}
+}
+
 // A wrong result must never look like a measurement: exit 1, nothing on
 // stdout.
 func TestWrongResultFails(t *testing.T) {

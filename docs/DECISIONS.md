@@ -11,7 +11,8 @@ On 2026-10-04 the owner explicitly accepted D-001 (option 3b), D-002, D-003
 (baseline layout), D-004, D-005, D-006, D-011, and D-012. That meets the
 Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). On 2026-10-05 the owner
 accepted D-010 and D-013 at the Phase 2 review, and on 2026-10-06
-D-014 for benchmark B7 and D-007 for the Phase 3 baseline. The other records keep the
+D-014 for benchmark B7 and D-007 for the Phase 3 baseline (D-007 amended on
+2026-10-14). The other records keep the
 status shown in their headings.
 
 ## Phase 0 decisions (accepted 2026-10-04)
@@ -226,7 +227,7 @@ randomized data structures.
 **Validation.** Run each reference model N times, and under different
 `GOMAXPROCS` values, and compare results byte for byte.
 
-## D-007 Benchmark baselines — Accepted (2026-10-06)
+## D-007 Benchmark baselines — Accepted (2026-10-06), amended (2026-10-14)
 
 **Context.** Comparisons are needed (a) between Atlas versions and (b) with
 other tools.
@@ -251,6 +252,41 @@ run.
   percentage tolerance replaces it.
 - Every published result set includes its environment, and is published only
   after every run's semantic check has passed.
+
+**Amendment (accepted 2026-10-14, after the Phase 3 reproducibility
+investigation).**
+- **Why.** The 2026-10-06 baseline was judged under the decision above.
+  `benchstat` flagged 3 of the 21 wall-time comparisons at p < 0.05, so its
+  sets did not agree, and Phase 3 stayed open. That judgement and that report
+  stand; this amendment does not apply to them. With 21 uncorrected
+  comparisons, about 66% of campaigns would flag at least one even if
+  nothing differed (assuming independent tests). So the decision rule for
+  the next campaign is fixed before its data exist.
+- **The comparison family** is all 21 wall-time (`sec/op`) comparisons of
+  suite version 1. No workload is excluded for noise, runtime, spread, or an
+  observed result.
+- **Each comparison** is `benchstat`'s per-workload test, set A against
+  set B.
+- **The rule.** Holm–Bonferroni correction across the 21, at family-wise
+  α = 0.05. For the Phase 3 baseline criterion, the sets agree only if no
+  comparison remains significant after correction. The exact procedure is
+  in [BENCHMARKS.md](BENCHMARKS.md) §5.
+- **Other metrics.** Allocations, RSS, GC, and the other metrics are reported
+  and analyzed as before (`benchstat`, α = 0.05). This rule governs only the
+  21 wall-time comparisons.
+- **One campaign.** One complete campaign is authorized. It runs from a
+  clean commit, in the randomized order of BENCHMARKS.md §5, and its report
+  records the commit and the dirty flag. If the campaign fails the criterion,
+  or a semantic check invalidates it, it is not repeated automatically.
+  Phase 3 then stays open pending an investigation and an explicit owner
+  decision.
+- **Limitation.** A result with no significant difference does not establish
+  statistical equivalence. It shows only that no difference was detected
+  with 10 runs per set, and the correction lowers the power to detect a real
+  difference.
+- **Relation to the decision above.** The bullet "`benchstat`'s statistical
+  comparison decides agreement" is refined, not replaced. `benchstat` still
+  makes every comparison, and no fixed percentage tolerance is used.
 
 ## D-008 Future parallelism — Unresolved
 

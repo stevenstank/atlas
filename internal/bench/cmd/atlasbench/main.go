@@ -6,11 +6,16 @@
 // Usage:
 //
 //	atlasbench -list
+//	atlasbench -plan -seed N [-rounds R]
 //	atlasbench -bench NAME [-format kv|bench] [-cpuprofile FILE] [-memprofile FILE]
 //
 // NAME is a workload name from -list, such as B1, B2/k=10, B7, or V1. Exit
 // status is 0 on success, 1 if the run failed or its result was wrong, and 2
 // for a usage error. A wrong result prints nothing on stdout.
+//
+// -plan prints the run order of a baseline campaign (bench.Plan,
+// BENCHMARKS.md §5) for master seed N and R rounds per set (default 10), as
+// tab-separated lines under the header bench.PlanHeader. It measures nothing.
 //
 // With -format kv (the default) the output is key=value lines: the
 // environment keys of bench.CaptureEnv; then
@@ -93,6 +98,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 	fs.SetOutput(stderr)
 	name := fs.String("bench", "", "workload name, e.g. B2/k=10 (see -list)")
 	list := fs.Bool("list", false, "list workload names and exit")
+	plan := fs.Bool("plan", false, "print a baseline campaign's run order and exit")
+	seed := fs.Uint64("seed", 0, "master seed for -plan")
+	rounds := fs.Int("rounds", 10, "rounds per set for -plan")
 	format := fs.String("format", "kv", "output format: kv or bench")
 	cpuPath := fs.String("cpuprofile", "", "write a CPU profile of the check.Run call to `file`")
 	memPath := fs.String("memprofile", "", "write a heap profile after check.Run to `file`")
@@ -102,6 +110,23 @@ func run(args []string, stdout, stderr io.Writer) int {
 	if fs.NArg() > 0 || (*format != "kv" && *format != "bench") {
 		fmt.Fprintf(stderr, "atlasbench: unexpected arguments %q or -format %q\n", fs.Args(), *format)
 		return 2
+	}
+	if *plan {
+		seeded := false
+		fs.Visit(func(f *flag.Flag) { seeded = seeded || f.Name == "seed" })
+		if !seeded || *rounds < 1 || *list || *name != "" {
+			fmt.Fprintln(stderr, "atlasbench: -plan needs -seed, a positive -rounds, and no -list or -bench")
+			return 2
+		}
+		var names []string
+		for _, w := range bench.Workloads() {
+			names = append(names, w.Name())
+		}
+		fmt.Fprintln(stdout, bench.PlanHeader)
+		for _, e := range bench.Plan(names, *rounds, *seed) {
+			fmt.Fprintln(stdout, e)
+		}
+		return 0
 	}
 	if *list {
 		for _, w := range bench.Workloads() {

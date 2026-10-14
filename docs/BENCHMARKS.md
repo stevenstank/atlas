@@ -103,14 +103,65 @@ median.
 least 10 runs, median, so that one-time costs are included as a user would see
 them.
 
-**Baseline sets (D-007).** A baseline is two independent sets of 10
-`atlasbench` invocations per workload, one workload per process, made with
-`internal/bench/baseline.sh`, and compared with `benchstat` from
-`golang.org/x/perf`, pinned: `go run
-golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68 A.txt B.txt`.
+**Baseline campaigns (D-007).** A baseline is one campaign of two
+independent sets, A then B, of 10 rounds. Each round runs every suite
+workload once with `atlasbench`, one workload per process, profiles off.
 `atlasbench` is the one-shot driver above; it checks every run's result
-before printing anything. The `testing.B` suite stays available for
-per-iteration throughput.
+before printing anything. A campaign is made with `internal/bench/baseline.sh
+OUTDIR`, run from the repository root at a clean commit. The script refuses a
+dirty tree and an existing `OUTDIR`. The `testing.B` suite stays available
+for per-iteration throughput.
+
+- **Order.** Each round runs the workloads in its own shuffled order, so a
+  workload's position and predecessor vary between rounds and between sets.
+  (The 2026-10-06 baseline ran set A in suite order and set B in reverse,
+  which gave each workload one fixed predecessor per set.) The orders come
+  from `atlasbench -plan` (`internal/bench/plan.go`). A master seed (`SEED`,
+  default 64 random bits) gives the round seeds through SplitMix64, and each
+  round's seed gives a Fisher–Yates shuffle. `plan.tsv`, with every round's
+  seed, is written before the first workload runs. `SEED=<master seed>`
+  reproduces it.
+- **Records.** `OUTDIR` holds:
+  - `campaign.txt`: commit, dirty flag, master seed, driver hash, and result;
+  - `status`;
+  - `plan.tsv`;
+  - `manifest.tsv`: per invocation, the set, round, position, seed,
+    workload, start and end times (UTC), exit status, wall time, and the
+    paths of its stdout and stderr under `logs/`;
+  - `loadavg.tsv`;
+  - `A.txt` and `B.txt`: the `benchstat` inputs, each run still preceded by
+    `atlasbench`'s environment capture.
+- **Load average.** `loadavg.tsv` holds `/proc/loadavg` before each round
+  and at the end. It observes only the WSL2 Linux guest. It does not measure
+  Windows host load, CPU frequency, power state, or thermal state.
+- **Failure.** An invocation fails if it exits nonzero (a wrong semantic
+  result exits 1) or does not print exactly one result line for its
+  workload. On the first failure, the script writes `failures.txt`, keeps
+  that invocation's logs, marks the campaign `invalid`, and stops. Nothing is
+  retried or skipped, and an invalid campaign is not published as a
+  baseline. An interrupted campaign is marked `aborted`.
+- **Limitation.** Set B still runs after set A, so slow drift over the
+  session remains confounded with the set.
+- **Analysis, fixed before the data.** Run `benchstat` from
+  `golang.org/x/perf`, pinned, twice:
+
+  ```
+  go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68 A.txt B.txt
+  go run golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68 -alpha 0.002380952380952381 A.txt B.txt
+  ```
+
+  The first run is the report: every metric at the default α = 0.05, as
+  before. The second run decides the D-007 criterion: **the sets agree only
+  if all 21 `sec/op` rows show `~`.** 0.002380952380952381 is 0.05/21, the
+  first Holm–Bonferroni threshold. Holm rejects anything only if the
+  smallest p-value is below that threshold. So "no `sec/op` row significant
+  at α = 0.05/21" is exactly "no comparison significant after Holm
+  correction at family-wise α = 0.05". `benchstat` compares its unrounded
+  p-value with `-alpha`, which avoids the rounding of its printed `p=`.
+  - If a row is significant, the campaign has failed. The full Holm result
+    is still reported: rerun with `-alpha` 0.05/20, 0.05/19, and so on. The
+    j smallest p-values are rejected when, for each i ≤ j, at least i rows
+    are significant at α = 0.05/(22 − i).
 
 ## 6. Profiling
 
