@@ -9,10 +9,10 @@ import (
 	"github.com/stevenstank/atlas/check"
 )
 
-// SuiteVersion identifies the suite (BENCHMARKS.md §3). It is provisional:
-// only part of the suite exists, so no result recorded under it is a Phase 3
-// baseline. Version 1 is assigned when the full suite exists.
-const SuiteVersion = "0-partial"
+// SuiteVersion identifies the suite (BENCHMARKS.md §3). Version 1 is the
+// first complete suite, B1–B8 and V1, and the Phase 3 baseline is measured
+// under it. Changing any workload or expected result needs a new version.
+const SuiteVersion = "1"
 
 // Entry is one row of the BENCHMARKS.md §3 suite table.
 type Entry struct {
@@ -37,7 +37,9 @@ var Suite = []Entry{
 	{ID: "B6", Model: "Message passing (models.ABP)", Params: "3 messages, channel cap in {2,3,4}", Ready: true},
 	{ID: "B7", Model: "Task queue, broken variant (EarlyClose)", Params: "8 tasks, 2 workers, 1 crash", Ready: true},
 	{ID: "B8", Model: "GridN + padded payload (PaddedGrid)", Params: "D=4, K in {10,20,40}, payload in {64,256} B", Ready: true},
-	{ID: "V1", Model: "held-out validation model", Params: "chosen in Phase 3", Deferred: "not chosen yet"},
+	// V1 is held out: it is measured only to confirm that a gain is real,
+	// never to guide optimization (BENCHMARKS.md §3).
+	{ID: "V1", Model: "held-out validation: concurrent register (models.Register)", Params: "3 clients, 2 ops", Ready: true},
 }
 
 // Want is a benchmark's expected semantic result (BENCHMARKS.md §3–4).

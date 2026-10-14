@@ -1,8 +1,7 @@
 # Benchmark methodology
 
-> Status: methodology only. **No benchmark results exist.** The harness is
-> built in Phase 3 ([ROADMAP.md](ROADMAP.md)). Every number published for Atlas
-> must come from the procedure below.
+> Status: suite version 1. Result sets are in [benchmarks/](benchmarks/).
+> Every number published for Atlas must come from the procedure below.
 
 ## 1. Principles
 
@@ -28,6 +27,7 @@
 | Transitions/s               | transitions ÷ exploration wall time | derived |
 | Total exploration time      | wall time of `Run`, start to result, for `Exhausted` runs | `time` |
 | Time to first counterexample| wall time until `Violation` is returned, including trace reconstruction | `time` |
+| Violation detection         | wall time until the first invariant evaluation returns false, before trace reconstruction; not the time to first counterexample | `atlasbench` |
 | Peak heap                   | max sampled `/memory/classes/heap/objects:bytes` | `runtime/metrics` |
 | Peak RSS                    | max resident set size of the process | `/usr/bin/time -v` (Linux) |
 | Bytes/state                 | peak heap ÷ states discovered | derived |
@@ -50,11 +50,11 @@ version, and results are compared only within the same version.
 | B2  | `GridN`                       | D=4, K ∈ {10,20,40}     | `Exhausted`, K^D states              | per-state cost, tiny states, scaling |
 | B3  | 8-puzzle                      | fixed                   | `Exhausted`, 181,440 states          | moderate branching, small keys |
 | B4  | Water jugs                    | big 5 L, small 3 L      | `Violation`, trace length 6          | time to first counterexample (micro) |
-| B5  | Two-phase commit              | N RMs ∈ {3,4,5,6}       | `Exhausted`, count from Phase 2 record | protocol-shaped workload |
-| B6  | Message passing (bounded, lossy) | channel cap ∈ {2,3,4} | `Exhausted`, count from Phase 2 record | larger, variable-size states |
-| B7  | Task queue, broken variant    | workers/tasks scaled    | `Violation`, trace length from Phase 2 record | deep counterexample in a large space |
-| B8  | `GridN` + padded payload      | payload ∈ {0,64,256} B  | `Exhausted`, K^D states              | effect of state size alone |
-| V1  | Held-out validation model     | chosen in Phase 3       | recorded                             | guard against tuning only for the suite |
+| B5  | Two-phase commit (Lamport's TwoPhase) | N RMs ∈ {3,4,5,6} | `Exhausted`, counts from the reference explorer | protocol-shaped workload |
+| B6  | Message passing (bounded, lossy): `models.ABP` | 3 messages, channel cap ∈ {2,3,4} | `Exhausted`, counts from the reference explorer | bounded message passing (fixed-size states) |
+| B7  | Task queue, `EarlyClose` broken variant | 8 tasks, 2 workers, 1 crash | `Violation`, trace length 21 (reference explorer) | deep counterexample in a large space |
+| B8  | `GridN` + padded payload      | D=4, K ∈ {10,20,40}, payload ∈ {64,256} B | `Exhausted`, K^D states | effect of state size alone |
+| V1  | Held-out validation: `models.Register` | 3 clients, 2 ops | `Exhausted`, 25,543 states (Phase 2 record) | guard against tuning only for the suite |
 
 Expected counts for B5–B7 come from the reference explorer
 ([TESTING.md](TESTING.md) §1) and are recorded before any performance work.
@@ -102,6 +102,15 @@ median.
 **Time to first counterexample.** Also measured with the one-shot driver, at
 least 10 runs, median, so that one-time costs are included as a user would see
 them.
+
+**Baseline sets (D-007).** A baseline is two independent sets of 10
+`atlasbench` invocations per workload, one workload per process, made with
+`internal/bench/baseline.sh`, and compared with `benchstat` from
+`golang.org/x/perf`, pinned: `go run
+golang.org/x/perf/cmd/benchstat@v0.0.0-20260929162123-406019bb8b68 A.txt B.txt`.
+`atlasbench` is the one-shot driver above; it checks every run's result
+before printing anything. The `testing.B` suite stays available for
+per-iteration throughput.
 
 ## 6. Profiling
 

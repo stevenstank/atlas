@@ -185,7 +185,14 @@ and B5 (two-phase commit) added with their oracles; B6 (ABP, 3 messages) and
 B8 (padded GridN) added. B7 (TaskQueue EarlyClose, 8 tasks; task cap raised to 8 by D-014)
 added. B1–B8 are ready; V1 is not chosen. Batch 3: the one-shot driver
 `internal/bench/cmd/atlasbench` (result check, replay, timing, peak RSS,
-profiles). No results published.
+profiles). Batch 4: D-007 accepted, suite version 1 with V1 (Register 3×2),
+and the first baseline,
+[benchmarks/2026-10-06-ryzen7-7435hs-wsl2.md](benchmarks/2026-10-06-ryzen7-7435hs-wsl2.md).
+Batch 5: the bottleneck report,
+[benchmarks/2026-10-06-ryzen7-7435hs-wsl2-analysis.md](benchmarks/2026-10-06-ryzen7-7435hs-wsl2-analysis.md).
+**Open:** the second exit criterion is not met. Three of the 21 `sec/op`
+comparisons between the sets differ at p < 0.05 (D-007: `benchstat`
+decides; owner ruling 2026-10-14).
 
 **Goal.** A trusted, reproducible measurement of the unoptimized engine.
 

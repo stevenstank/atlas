@@ -34,15 +34,18 @@ func TestExhaustedRun(t *testing.T) {
 	for k, want := range map[string]string{
 		"benchmark": "B2/k=10", "param-k": "10", "param-d": "4", "status": "Exhausted", "states": "10000",
 		"transitions": "36000", "invariant": "NA", "trace-length": "NA", "time-to-first-counterexample-ns": "NA",
-		"replay": "NA", "cpu-profile": "off", "mem-profile": "off", "driver-version": driverVersion,
+		"violation-detection-ns": "NA",
+		"replay":                 "NA", "cpu-profile": "off", "mem-profile": "off", "driver-version": driverVersion,
 		"atlas-suite": bench.SuiteVersion,
 	} {
 		if kv[k] != want {
 			t.Errorf("%s = %q, want %q", k, kv[k], want)
 		}
 	}
-	if n, err := strconv.ParseInt(kv["wall-time-ns"], 10, 64); err != nil || n <= 0 {
-		t.Errorf("wall-time-ns = %q", kv["wall-time-ns"])
+	for _, k := range []string{"wall-time-ns", "peak-rss-bytes", "alloc-bytes", "allocs", "gc-cycles", "gc-cpu-fraction"} {
+		if n, err := strconv.ParseFloat(kv[k], 64); err != nil || n < 0 || (k == "wall-time-ns" && n == 0) {
+			t.Errorf("%s = %q", k, kv[k])
+		}
 	}
 	// The schema's order is fixed: environment first, the result last.
 	if keys[0] != "atlas-suite" || keys[len(keys)-1] != "replay" {
@@ -50,9 +53,11 @@ func TestExhaustedRun(t *testing.T) {
 	}
 }
 
-// For a Violation the hook fires during check.Run, before the trace is
-// rebuilt, so the time to the counterexample is positive and at most the
-// wall time, and the trace is replayed.
+// For a Violation, time-to-first-counterexample-ns is the BENCHMARKS.md §2
+// interval (until Run returns, trace included), which is the wall time.
+// violation-detection-ns comes from the hook, which fires during check.Run
+// before the trace is rebuilt, so it is positive and at most that. The trace
+// is replayed.
 func TestViolationRun(t *testing.T) {
 	code, kv, _, stderr := invoke(t, "-bench", "B4")
 	if code != 0 {
@@ -62,15 +67,40 @@ func TestViolationRun(t *testing.T) {
 		kv["states"] != "13" || kv["replay"] != "ok" || kv["param-big"] != "5" {
 		t.Errorf("%v", kv)
 	}
-	ttfc, err1 := strconv.ParseInt(kv["time-to-first-counterexample-ns"], 10, 64)
+	detect, err1 := strconv.ParseInt(kv["violation-detection-ns"], 10, 64)
 	wall, err2 := strconv.ParseInt(kv["wall-time-ns"], 10, 64)
-	if err1 != nil || err2 != nil || ttfc <= 0 || ttfc > wall {
-		t.Errorf("time-to-first-counterexample-ns = %q, wall-time-ns = %q", kv["time-to-first-counterexample-ns"], kv["wall-time-ns"])
+	if err1 != nil || err2 != nil || detect <= 0 || detect > wall || kv["time-to-first-counterexample-ns"] != kv["wall-time-ns"] {
+		t.Errorf("violation-detection-ns = %q, time-to-first-counterexample-ns = %q, wall-time-ns = %q",
+			kv["violation-detection-ns"], kv["time-to-first-counterexample-ns"], kv["wall-time-ns"])
+	}
+}
+
+// -format bench prints only environment configuration lines and one
+// benchmark line; violation-detection-ns appears only for a Violation.
+func TestBenchFormat(t *testing.T) {
+	for name, wantDetect := range map[string]bool{"B1": false, "B4": true} {
+		var out bytes.Buffer
+		if code := run([]string{"-bench", name, "-format", "bench"}, &out, &bytes.Buffer{}); code != 0 {
+			t.Fatalf("%s: exit %d", name, code)
+		}
+		lines := strings.Split(strings.TrimSuffix(out.String(), "\n"), "\n")
+		last := lines[len(lines)-1]
+		f := strings.Fields(last)
+		if f[0] != "BenchmarkSuite/"+name || f[1] != "1" || f[3] != "ns/op" || !strings.Contains(last, " peak-rss-bytes") ||
+			!strings.Contains(last, " B/op") || !strings.Contains(last, " allocs/op") || strings.Contains(last, "violation-detection-ns") != wantDetect {
+			t.Errorf("%s: %q", name, last)
+		}
+		for _, l := range lines[:len(lines)-1] {
+			if k, _, ok := strings.Cut(l, ": "); !ok || strings.HasPrefix(k, "param-") || k == "benchmark" {
+				t.Errorf("%s: config line %q", name, l)
+			}
+		}
 	}
 }
 
 func TestUsageErrors(t *testing.T) {
 	for _, args := range [][]string{
+		{"-bench", "B1", "-format", "json"},
 		{"-bench", "B9"}, {"-bench", "B2"}, {"-bench", "B5/n=7"}, {}, {"-bench", "B1", "extra"}, {"-nosuchflag"},
 	} {
 		if code, kv, _, stderr := invoke(t, args...); code != 2 || len(kv) != 0 || stderr == "" {

@@ -133,6 +133,7 @@ func gridWant(d, k int) Want {
 //   - B6: caps 2 and 3 equal the Phase 2 records (CONFORMANCE.md, 3×2 and
 //     3×3); cap 4 from the reference explorer before any measurement.
 //   - B7: the reference explorer, agreeing with the engine (TestB7Oracle).
+//   - V1: the Phase 2 record for Register 3×2.
 func Workloads() []Workload {
 	var ws []Workload
 	ws = append(ws, workload("B1", nil, nil, models.Origin, nil,
@@ -176,6 +177,12 @@ func Workloads() []Workload {
 				PaddedGrid{D: 4, K: k, Pad: pad}, nil, gridWant(4, k)))
 		}
 	}
+	// V1, held out: the correct concurrent register at its largest Phase 2
+	// size, with the Phase 2 record (models/register_test.go,
+	// TestRegisterCorrect, cross-checked by the reference explorer).
+	ws = append(ws, workload("V1", nil, [][2]string{kv("clients", 3), kv("ops", 2)}, models.Register{Clients: 3, Ops: 2},
+		[]check.Invariant[models.RegState]{{Name: "NoStaleRead", Holds: models.NoStaleRead}},
+		Want{Status: check.Exhausted, States: 25543, Transitions: 58698}))
 	return ws
 }
 

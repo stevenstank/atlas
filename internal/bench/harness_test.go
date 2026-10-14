@@ -109,7 +109,7 @@ func TestWorkloads(t *testing.T) {
 			t.Errorf("%s: ready = %v but %d workloads", e.ID, e.Ready, ids[e.ID])
 		}
 	}
-	for id, n := range map[string]int{"B1": 1, "B2": 3, "B3": 1, "B4": 1, "B5": 4, "B6": 3, "B7": 1, "B8": 6} {
+	for id, n := range map[string]int{"B1": 1, "B2": 3, "B3": 1, "B4": 1, "B5": 4, "B6": 3, "B7": 1, "B8": 6, "V1": 1} {
 		if ids[id] != n {
 			t.Errorf("%s: %d workloads, want %d", id, ids[id], n)
 		}
@@ -135,7 +135,7 @@ func TestSuiteTable(t *testing.T) {
 		}
 		ready[e.ID] = e.Ready
 	}
-	want := map[string]bool{"B1": true, "B2": true, "B3": true, "B4": true, "B5": true, "B6": true, "B7": true, "B8": true, "V1": false}
+	want := map[string]bool{"B1": true, "B2": true, "B3": true, "B4": true, "B5": true, "B6": true, "B7": true, "B8": true, "V1": true}
 	for id, r := range want {
 		if got, ok := ready[id]; !ok || got != r {
 			t.Errorf("%s: ready = %v (present %v), want %v", id, got, ok, r)

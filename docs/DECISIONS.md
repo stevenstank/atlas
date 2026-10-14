@@ -11,13 +11,14 @@ On 2026-10-04 the owner explicitly accepted D-001 (option 3b), D-002, D-003
 (baseline layout), D-004, D-005, D-006, D-011, and D-012. That meets the
 Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). On 2026-10-05 the owner
 accepted D-010 and D-013 at the Phase 2 review, and on 2026-10-06
-D-014 for benchmark B7. The other records keep the
+D-014 for benchmark B7 and D-007 for the Phase 3 baseline. The other records keep the
 status shown in their headings.
 
 ## Phase 0 decisions (accepted 2026-10-04)
 
-**All rows below are Accepted.** D-007 and D-009 remain Proposed, and D-008
-and D-010 were Unresolved at the time (D-010 was accepted on 2026-10-05). None
+**All rows below are Accepted.** D-007 and D-009 were Proposed, and D-008
+and D-010 Unresolved, at the time (D-010 was accepted on 2026-10-05 and D-007
+on 2026-10-06). None
 of those four blocks Phase 1, so they are not listed.
 
 | ID | Decision | Rationale | Alternatives considered | Key consequences |
@@ -225,7 +226,7 @@ randomized data structures.
 **Validation.** Run each reference model N times, and under different
 `GOMAXPROCS` values, and compare results byte for byte.
 
-## D-007 Benchmark baselines — Proposed
+## D-007 Benchmark baselines — Accepted (2026-10-06)
 
 **Context.** Comparisons are needed (a) between Atlas versions and (b) with
 other tools.
@@ -237,6 +238,19 @@ the methodology must be published.
 
 **Validation.** `benchstat` over ≥10 runs. State counts are checked on every
 run.
+
+**Decision (accepted 2026-10-06, Phase 3 batch 4).**
+- Results are measured with `internal/bench/cmd/atlasbench` (one workload per
+  process) or the `testing.B` suite, as [BENCHMARKS.md](BENCHMARKS.md) §5
+  specifies.
+- A baseline is two independent sets of 10 runs of every suite workload on
+  the same machine, compared with `benchstat` (`golang.org/x/perf`, pinned
+  version in BENCHMARKS.md §5). It is a measurement tool run with `go run`,
+  not a module dependency.
+- `benchstat`'s statistical comparison decides agreement. No fixed
+  percentage tolerance replaces it.
+- Every published result set includes its environment, and is published only
+  after every run's semantic check has passed.
 
 ## D-008 Future parallelism — Unresolved
 
