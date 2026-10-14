@@ -1,10 +1,25 @@
 package bench
 
-import "fmt"
+import (
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 // Sets are the two independent sets of a baseline campaign (DECISIONS.md
 // D-007), run in this order.
 var Sets = []string{"A", "B"}
+
+// ParseSeed parses a campaign master seed. Only the canonical decimal form
+// is accepted: ASCII digits, no sign, prefix, or spaces, no leading zero
+// except in "0", and at most 2^64-1, so that the seed recorded is the seed
+// used. baseline.sh applies the same rule.
+func ParseSeed(s string) (uint64, error) {
+	if s == "" || strings.TrimLeft(s, "0123456789") != "" || (len(s) > 1 && s[0] == '0') {
+		return 0, fmt.Errorf("seed %q is not a canonical decimal integer", s)
+	}
+	return strconv.ParseUint(s, 10, 64)
+}
 
 // PlanEntry is one atlasbench invocation of a baseline campaign.
 type PlanEntry struct {

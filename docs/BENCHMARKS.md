@@ -108,19 +108,29 @@ independent sets, A then B, of 10 rounds. Each round runs every suite
 workload once with `atlasbench`, one workload per process, profiles off.
 `atlasbench` is the one-shot driver above; it checks every run's result
 before printing anything. A campaign is made with `internal/bench/baseline.sh
-OUTDIR`, run from the repository root at a clean commit. The script refuses a
-dirty tree and an existing `OUTDIR`. The `testing.B` suite stays available
-for per-iteration throughput.
+OUTDIR` at a clean commit. The `testing.B` suite stays available for
+per-iteration throughput.
 
+- **Preflight.** Before writing anything, the script checks `RUNS` and
+  `SEED`, requires the checkout that holds the script to be clean, and
+  requires `OUTDIR` to lie outside its worktree, with symlinks and `..`
+  resolved. Files inside the worktree would make the build look modified.
+  `OUTDIR` must not exist, and is claimed with a single `mkdir`, so two
+  campaigns cannot share it. A refusal exits 2 and creates nothing.
+- **Provenance.** The driver is built from the checkout. Before any workload
+  runs, its `go version -m` metadata must give `vcs.revision` equal to HEAD
+  and `vcs.modified=false`. The same check applies to a binary supplied with
+  `ATLASBENCH`, which tests use.
 - **Order.** Each round runs the workloads in its own shuffled order, so a
   workload's position and predecessor vary between rounds and between sets.
   (The 2026-10-06 baseline ran set A in suite order and set B in reverse,
   which gave each workload one fixed predecessor per set.) The orders come
   from `atlasbench -plan` (`internal/bench/plan.go`). A master seed (`SEED`,
-  default 64 random bits) gives the round seeds through SplitMix64, and each
-  round's seed gives a Fisher–Yates shuffle. `plan.tsv`, with every round's
-  seed, is written before the first workload runs. `SEED=<master seed>`
-  reproduces it.
+  default 64 random bits; canonical decimal only, as in `bench.ParseSeed`, so
+  the recorded seed is the seed used) gives the round seeds through
+  SplitMix64, and each round's seed gives a Fisher–Yates shuffle.
+  `plan.tsv`, with every round's seed, is written before the first workload
+  runs. `SEED=<master seed>` reproduces it.
 - **Records.** `OUTDIR` holds:
   - `campaign.txt`: commit, dirty flag, master seed, driver hash, and result;
   - `status`;
@@ -134,12 +144,15 @@ for per-iteration throughput.
 - **Load average.** `loadavg.tsv` holds `/proc/loadavg` before each round
   and at the end. It observes only the WSL2 Linux guest. It does not measure
   Windows host load, CPU frequency, power state, or thermal state.
-- **Failure.** An invocation fails if it exits nonzero (a wrong semantic
-  result exits 1) or does not print exactly one result line for its
-  workload. On the first failure, the script writes `failures.txt`, keeps
-  that invocation's logs, marks the campaign `invalid`, and stops. Nothing is
-  retried or skipped, and an invalid campaign is not published as a
-  baseline. An interrupted campaign is marked `aborted`.
+- **Failure.** A setup step fails if it exits nonzero, if the provenance
+  check fails, or if the plan is not exactly the expected sequence of sets,
+  rounds, positions, workloads, and per-round seeds. An invocation fails if
+  it exits nonzero (a wrong semantic result exits 1) or does not print
+  exactly one result line for its workload. On the first failure, the script
+  writes `failures.txt`, keeps the logs of the step or invocation, marks the
+  campaign `invalid`, and stops. Nothing is retried or skipped, and an
+  invalid campaign is not published as a baseline. An interrupted campaign
+  is marked `aborted`.
 - **Limitation.** Set B still runs after set A, so slow drift over the
   session remains confounded with the set.
 - **Analysis, fixed before the data.** Run `benchstat` from

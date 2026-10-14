@@ -14,7 +14,8 @@
 // for a usage error. A wrong result prints nothing on stdout.
 //
 // -plan prints the run order of a baseline campaign (bench.Plan,
-// BENCHMARKS.md §5) for master seed N and R rounds per set (default 10), as
+// BENCHMARKS.md §5) for master seed N (canonical decimal, bench.ParseSeed)
+// and R rounds per set (default 10), as
 // tab-separated lines under the header bench.PlanHeader. It measures nothing.
 //
 // With -format kv (the default) the output is key=value lines: the
@@ -99,7 +100,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 	name := fs.String("bench", "", "workload name, e.g. B2/k=10 (see -list)")
 	list := fs.Bool("list", false, "list workload names and exit")
 	plan := fs.Bool("plan", false, "print a baseline campaign's run order and exit")
-	seed := fs.Uint64("seed", 0, "master seed for -plan")
+	seedText := fs.String("seed", "", "master seed for -plan: a canonical decimal integer (bench.ParseSeed)")
 	rounds := fs.Int("rounds", 10, "rounds per set for -plan")
 	format := fs.String("format", "kv", "output format: kv or bench")
 	cpuPath := fs.String("cpuprofile", "", "write a CPU profile of the check.Run call to `file`")
@@ -112,10 +113,9 @@ func run(args []string, stdout, stderr io.Writer) int {
 		return 2
 	}
 	if *plan {
-		seeded := false
-		fs.Visit(func(f *flag.Flag) { seeded = seeded || f.Name == "seed" })
-		if !seeded || *rounds < 1 || *list || *name != "" {
-			fmt.Fprintln(stderr, "atlasbench: -plan needs -seed, a positive -rounds, and no -list or -bench")
+		seed, err := bench.ParseSeed(*seedText)
+		if err != nil || *rounds < 1 || *list || *name != "" {
+			fmt.Fprintln(stderr, "atlasbench: -plan needs a canonical decimal -seed, a positive -rounds, and no -list or -bench")
 			return 2
 		}
 		var names []string
@@ -123,7 +123,7 @@ func run(args []string, stdout, stderr io.Writer) int {
 			names = append(names, w.Name())
 		}
 		fmt.Fprintln(stdout, bench.PlanHeader)
-		for _, e := range bench.Plan(names, *rounds, *seed) {
+		for _, e := range bench.Plan(names, *rounds, seed) {
 			fmt.Fprintln(stdout, e)
 		}
 		return 0

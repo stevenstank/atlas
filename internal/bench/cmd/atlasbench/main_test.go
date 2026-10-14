@@ -142,7 +142,7 @@ func TestPlan(t *testing.T) {
 	}
 	for _, args := range [][]string{
 		{"-plan"}, {"-plan", "-seed", "1", "-rounds", "0"}, {"-plan", "-seed", "1", "-list"},
-		{"-plan", "-seed", "1", "-bench", "B1"}, {"-plan", "-seed", "x"},
+		{"-plan", "-seed", "1", "-bench", "B1"}, {"-plan", "-seed", "x"}, {"-plan", "-seed", "010"},
 	} {
 		var o, e bytes.Buffer
 		if code := run(args, &o, &e); code != 2 || o.Len() != 0 || e.Len() == 0 {
