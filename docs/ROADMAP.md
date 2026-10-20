@@ -1,7 +1,8 @@
 # Roadmap
 
-> Status: plan, not a promise. Current phase: **Phase 3 (in progress)**. Phase 0 decisions
-> accepted 2026-10-04; Phase 1 and Phase 2 closed 2026-10-05.
+> Status: plan, not a promise. Current phase: **Phase 4 (not started; awaits
+> owner authorization)**. Phase 0 decisions accepted 2026-10-04; Phase 1 and
+> Phase 2 closed 2026-10-05; Phase 3 closed 2026-10-20.
 
 ## Timeline estimate
 
@@ -179,7 +180,23 @@ Mitigation: parameterize sizes and record counts for several sizes.
 
 ## Phase 3: Performance baseline and profiling
 
-**Status: in progress.** Batch 1 done: the `internal/bench` harness
+**Status: complete (2026-10-20).** Evidence for each exit criterion:
+- Semantic results: `Want.Check` runs in every `atlasbench` run and every
+  `testing.B` iteration, and all 420 runs of the 2026-10-20 campaign passed.
+- Agreement: the 2026-10-20 campaign,
+  [benchmarks/2026-10-20-ryzen7-7435hs-wsl2.md](benchmarks/2026-10-20-ryzen7-7435hs-wsl2.md),
+  the one campaign authorized by the D-007 amendment and the authoritative
+  record of the Phase 3 baseline. No `sec/op` comparison is significant
+  after Holm correction at family-wise α = 0.05 (smallest p 0.00288, first
+  threshold 0.00238). That is "no significant difference detected", not
+  equivalence: set B ran 6.6% slower (geometric mean), a session drift
+  confounded with set order (report, section 9).
+- Bottleneck report:
+  [benchmarks/2026-10-06-ryzen7-7435hs-wsl2-analysis.md](benchmarks/2026-10-06-ryzen7-7435hs-wsl2-analysis.md),
+  with "Processing per state" and "Number of states" sections. Its own
+  exit-criteria table (section 7) predates the 2026-10-20 campaign.
+
+**History.** Batch 1: the `internal/bench` harness
 skeleton with checked benchmarks for B1, B2, and B4. Batch 2: B3 (8-puzzle)
 and B5 (two-phase commit) added with their oracles; B6 (ABP, 3 messages) and
 B8 (padded GridN) added. B7 (TaskQueue EarlyClose, 8 tasks; task cap raised to 8 by D-014)
@@ -190,9 +207,11 @@ and the first baseline,
 [benchmarks/2026-10-06-ryzen7-7435hs-wsl2.md](benchmarks/2026-10-06-ryzen7-7435hs-wsl2.md).
 Batch 5: the bottleneck report,
 [benchmarks/2026-10-06-ryzen7-7435hs-wsl2-analysis.md](benchmarks/2026-10-06-ryzen7-7435hs-wsl2-analysis.md).
-**Open:** the second exit criterion is not met. Three of the 21 `sec/op`
-comparisons between the sets differ at p < 0.05 (D-007: `benchstat`
-decides; owner ruling 2026-10-14).
+That baseline did not meet the second exit criterion: three of the 21
+`sec/op` comparisons differed at p < 0.05 under the original D-007 rule
+(owner ruling 2026-10-14). Batch 6: the D-007 amendment (Holm correction,
+fixed before the data), the randomized and hardened `baseline.sh` protocol,
+and the 2026-10-20 campaign.
 
 **Goal.** A trusted, reproducible measurement of the unoptimized engine.
 
@@ -217,6 +236,8 @@ use many repetitions, and treat small differences as noise.
 
 ## Phase 4: Core performance engineering (timeboxed)
 
+**Status: not started.** Phase 4 begins when the owner authorizes it.
+
 **Goal.** Measured improvements to the hot paths identified in Phase 3.
 
 **Candidates**, in profile order, not decided in advance: key encoding,
@@ -231,6 +252,14 @@ belong to Phase 6.
 3. record memory vs. throughput trade-offs;
 4. preserve exact identity, shortest traces, and determinism, or else be
    rejected.
+
+**Measurement.** The 2026-10-20 baseline showed drift of about 5–10% within
+one session on the large workloads, confounded with the order of sequential
+sets. Before/after comparisons should therefore interleave the two builds in
+one session where practical, with the comparison method fixed before the
+data. Every optimization claim needs `benchstat` evidence and every run's
+semantic check passing; a difference inside the noise is reported as "no
+significant difference".
 
 **Exit criteria.** The criteria above, plus an updated baseline document. If
 the timebox ends, remaining ideas are recorded with their expected benefit.
