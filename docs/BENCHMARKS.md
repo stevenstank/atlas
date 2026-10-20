@@ -145,6 +145,20 @@ per-iteration throughput.
     because its configuration cannot be established from its metadata.
   - **Records:** `campaign.txt` records the build command, the build
     environment, the toolchain version, and the recorded settings.
+- **Runtime configuration.** The script unsets `GOGC`, `GODEBUG`,
+  `GOMEMLIMIT`, and `GOMAXPROCS` for every process it starts, so workloads
+  run with the Go runtime defaults: `GOGC=100`, no memory limit, the
+  `GODEBUG` defaults of the binary (non-default ones would appear as
+  `DefaultGODEBUG` in its build metadata), and a `GOMAXPROCS` the runtime
+  chooses from the CPU count, CPU affinity, and any cgroup quota. Each run
+  records its `gomaxprocs`. `campaign.txt` records the unset and any
+  inherited values (`runtime-env-inherited`). Other variables the runtime
+  reads, such as `GOTRACEBACK`, are not controlled.
+- **Launch.** From the checkout, with nothing else running:
+  `env -u BASH_ENV -u ENV RUNS=10 bash internal/bench/baseline.sh OUTDIR`,
+  optionally with `SEED=<decimal>`. The script refuses a non-empty
+  `BASH_ENV` or `ENV`, but bash runs such a file before the script starts,
+  so `env -u` removes them first.
 - **Order.** Each round runs the workloads in its own shuffled order, so a
   workload's position and predecessor vary between rounds and between sets.
   (The 2026-10-06 baseline ran set A in suite order and set B in reverse,

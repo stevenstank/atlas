@@ -37,6 +37,8 @@
 # build metadata must name HEAD as vcs.revision, say vcs.modified=false, and
 # show the default build configuration. A binary supplied with ATLASBENCH is
 # refused: its build configuration cannot be established from its metadata.
+# GOGC, GODEBUG, GOMEMLIMIT, and GOMAXPROCS are unset for every process the
+# script starts, so workloads run with the Go runtime defaults.
 #
 # After OUTDIR is claimed, the first failure of a setup step (build, build
 # metadata and provenance, -list, -plan, plan validation) or of a workload
@@ -59,6 +61,11 @@ utc() { date -u +%Y-%m-%dT%H:%M:%S.%NZ; }
 for v in BASH_ENV ENV; do
 	[[ -z ${!v:-} ]] || refuse "$v is set; unset it and rerun (this script never reads the file it names)"
 done
+# Every process the script starts gets the Go runtime defaults for these;
+# inherited values are recorded in campaign.txt, not used.
+runtime_env=(GOGC GODEBUG GOMEMLIMIT GOMAXPROCS) inherited=
+for v in "${runtime_env[@]}"; do [[ -z ${!v+set} ]] || inherited+=" $v=${!v@Q}"; done
+unset "${runtime_env[@]}"
 runs=${RUNS-10}
 [[ $runs =~ ^[1-9][0-9]{0,3}$ ]] || refuse "RUNS must be an integer from 1 to 9999, got '$runs'"
 if [[ ${SEED+set} ]]; then
@@ -115,6 +122,8 @@ trap 'if [[ $(cat "$out/status" 2>/dev/null) == running ]]; then echo aborted >"
 	echo "worktree: $top"
 	echo "git-commit: $commit"
 	echo "git-dirty: false"
+	echo "runtime-env: ${runtime_env[*]} unset for every process (Go runtime defaults)"
+	echo "runtime-env-inherited:${inherited:- none}"
 } >"$out/campaign.txt" || fail "setup: cannot write campaign.txt"
 mkdir -- "$out/logs" || fail "setup: cannot create $out/logs"
 

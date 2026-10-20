@@ -67,6 +67,7 @@ case "$1" in
 -plan) [[ -z ${STUB_PLAN_FAIL:-} ]] || { echo "plan broke" >&2; exit 4; }; cat "$STUB/plan" ;;
 -bench)
 	[[ $# -eq 4 && $3 == -format && $4 == bench ]] || exit 9
+	env | grep -E '^(GOGC|GODEBUG|GOMEMLIMIT|GOMAXPROCS)=' >>"$STUB/runtime-env"
 	echo "stub stderr for $2" >&2
 	line="BenchmarkSuite/$2 1 1000 ns/op 4000000 peak-rss-bytes"
 	mode=
@@ -169,7 +170,8 @@ func (f *fixture) run(outdir string) result {
 	for _, kv := range f.base {
 		k, _, _ := strings.Cut(kv, "=")
 		if strings.HasPrefix(k, "STUB") || strings.HasPrefix(k, "FAKE_") || strings.HasPrefix(k, "GIT_") ||
-			slices.Contains([]string{"ALLOW_DIRTY", "ATLASBENCH", "SEED", "RUNS", "PATH", "BASH_ENV", "ENV", "CDPATH"}, k) {
+			slices.Contains([]string{"ALLOW_DIRTY", "ATLASBENCH", "SEED", "RUNS", "PATH", "BASH_ENV", "ENV", "CDPATH",
+				"GOGC", "GODEBUG", "GOMEMLIMIT", "GOMAXPROCS"}, k) {
 			continue
 		}
 		env = append(env, kv)
@@ -246,7 +248,7 @@ func TestBaselineCampaign(t *testing.T) {
 	camp := r.read(t, "campaign.txt")
 	for _, want := range []string{"master-seed: 42\n", "rounds-per-set: 2\n", "git-commit: " + fakeHead + "\n",
 		"git-dirty: false\n", "(built from " + f.top + ")", "driver-vcs-revision: " + fakeHead + "\n",
-		"provenance: ok", "result: complete, 84 invocations"} {
+		"provenance: ok", "runtime-env-inherited: none\n", "result: complete, 84 invocations"} {
 		if !strings.Contains(camp, want) {
 			t.Errorf("campaign.txt lacks %q:\n%s", want, camp)
 		}
@@ -693,6 +695,33 @@ func TestBaselineCDPATH(t *testing.T) {
 	b, _ := os.ReadFile(filepath.Join(f.stub, "git-dirs"))
 	if dirs := lines(string(b)); len(dirs) == 0 || dirs[0] != here {
 		t.Errorf("the script looked for its checkout in %q, want %q", dirs, here)
+	}
+}
+
+// Inherited Go runtime settings never reach a workload process, and
+// campaign.txt records what was inherited, even a variable set but empty.
+func TestBaselineRuntimeEnv(t *testing.T) {
+	f := newFixture(t, 1, 23)
+	for k, v := range map[string]string{"GOGC": "off", "GODEBUG": "gctrace=1,madvdontneed=1", "GOMEMLIMIT": "",
+		"GOMAXPROCS": "1"} {
+		f.env[k] = v
+	}
+	r := f.run(filepath.Join(f.root, "data", "c"))
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	if n := len(f.benchCalls()); n != len(f.plan)-1 {
+		t.Fatalf("%d workload runs, want %d", n, len(f.plan)-1)
+	}
+	if b, _ := os.ReadFile(filepath.Join(f.stub, "runtime-env")); len(b) != 0 {
+		t.Errorf("workloads inherited:\n%s", b)
+	}
+	camp := r.read(t, "campaign.txt")
+	for _, want := range []string{"runtime-env: GOGC GODEBUG GOMEMLIMIT GOMAXPROCS unset for every process",
+		"runtime-env-inherited: GOGC='off' GODEBUG='gctrace=1,madvdontneed=1' GOMEMLIMIT='' GOMAXPROCS='1'\n"} {
+		if !strings.Contains(camp, want) {
+			t.Errorf("campaign.txt lacks %q:\n%s", want, camp)
+		}
 	}
 }
 
