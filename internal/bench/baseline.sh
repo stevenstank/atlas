@@ -9,7 +9,9 @@
 # `atlasbench -plan`, and is written to plan.tsv, with each round's seed,
 # before the first workload runs.
 #
-# Preflight, before anything is written: RUNS and SEED must be canonical
+# Preflight, before anything is written: BASH_ENV and ENV must be unset or
+# empty (bash has already run a BASH_ENV file before this script starts, and
+# the script cannot undo that; it can only refuse), RUNS and SEED must be canonical
 # decimal integers (SEED as bench.ParseSeed accepts it), the git checkout
 # holding this script must be clean, and OUTDIR must lie outside its worktree
 # (after resolving symlinks and ..) and must not exist. A refusal exits 2 and
@@ -54,6 +56,9 @@ refuse() {
 utc() { date -u +%Y-%m-%dT%H:%M:%S.%NZ; }
 
 [[ $# -eq 1 && -n $1 ]] || refuse "usage: baseline.sh OUTDIR"
+for v in BASH_ENV ENV; do
+	[[ -z ${!v:-} ]] || refuse "$v is set; unset it and rerun (this script never reads the file it names)"
+done
 runs=${RUNS-10}
 [[ $runs =~ ^[1-9][0-9]{0,3}$ ]] || refuse "RUNS must be an integer from 1 to 9999, got '$runs'"
 if [[ ${SEED+set} ]]; then

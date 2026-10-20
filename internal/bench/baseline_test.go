@@ -288,7 +288,7 @@ func TestBaselineCampaign(t *testing.T) {
 // no effect.
 func TestBaselineRefusals(t *testing.T) {
 	polluted := append(os.Environ(), "ALLOW_DIRTY=1", "GIT_DIR=/nonexistent", "STUB_TARGET=B1",
-		"STUB_MODE=fail", "ATLASBENCH=/bin/true", "FAKE_BUILD_FAIL=")
+		"STUB_MODE=fail", "ATLASBENCH=/bin/true")
 	polluted = append(polluted, hostileShell(t)...)
 	for _, inherited := range []struct {
 		name string
@@ -318,6 +318,16 @@ func TestBaselineRefusals(t *testing.T) {
 			}},
 			{"supplied binary", "ATLASBENCH is not supported", func(f *fixture) string {
 				f.env["ATLASBENCH"] = filepath.Join(f.stub, "atlasbench") // with valid build info
+				return filepath.Join(f.root, "data", "c")
+			}},
+			{"BASH_ENV", "BASH_ENV is set; unset it", func(f *fixture) string {
+				f.write("empty", "") // harmless: bash runs it before the script starts
+				f.env["BASH_ENV"] = filepath.Join(f.stub, "empty")
+				return filepath.Join(f.root, "data", "c")
+			}},
+			{"ENV", "baseline.sh: ENV is set; unset it", func(f *fixture) string {
+				f.write("empty", "")
+				f.env["ENV"] = filepath.Join(f.stub, "empty")
 				return filepath.Join(f.root, "data", "c")
 			}},
 			{"existing directory", "exists", func(f *fixture) string {
