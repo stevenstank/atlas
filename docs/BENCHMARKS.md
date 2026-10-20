@@ -119,8 +119,32 @@ per-iteration throughput.
   campaigns cannot share it. A refusal exits 2 and creates nothing.
 - **Provenance.** The driver is built from the checkout. Before any workload
   runs, its `go version -m` metadata must give `vcs.revision` equal to HEAD
-  and `vcs.modified=false`. The same check applies to a binary supplied with
-  `ATLASBENCH`, which tests use.
+  and `vcs.modified=false`.
+- **Build configuration.** Phase 3 measures the toolchain's default build:
+  - **Command:** `go build -o OUTDIR/atlasbench ./internal/bench/cmd/atlasbench`,
+    with no flags.
+  - **Environment:** reduced (`env -i`) to `PATH` and `HOME`, plus
+    `GOENV=off`, `GOFLAGS=`, `GOWORK=off`, and `GOTOOLCHAIN=local`.
+    `GOENV=off` is needed because an empty `GOFLAGS` alone still falls back to
+    values set with `go env -w`. Other inherited variables (`GOEXPERIMENT`,
+    `GOAMD64`, `CGO_CFLAGS`, ...) never reach the build.
+  - **Metadata check:** the driver's metadata must then name the atlasbench
+    package, list no dependencies, and give `-buildmode=exe`, `-compiler=gc`,
+    empty `CGO_*FLAGS`, and `GOAMD64=v1`. The only other build settings
+    allowed are `CGO_ENABLED`, `GOARCH`, `GOOS`, and `DefaultGODEBUG`, which
+    are recorded but not enforced (2026-10-06: `CGO_ENABLED=1`,
+    `linux/amd64`). Any other setting is refused, including `-race`,
+    `-gcflags`, `-ldflags`, `-tags`, `-trimpath`, `-cover`, `-asan`, `-msan`,
+    `-pgo`, `GOEXPERIMENT`, and `GOFIPS140`.
+  - **Limits of the metadata:** Go calls these settings informational, not
+    exhaustive. They do not record `-overlay`, `-toolexec`, or the
+    toolchain's own integrity, and `-trimpath` hides `-ldflags`. So the
+    controlled build establishes the configuration, and the metadata check
+    only confirms it.
+  - **Supplied binaries:** a binary supplied with `ATLASBENCH` is refused,
+    because its configuration cannot be established from its metadata.
+  - **Records:** `campaign.txt` records the build command, the build
+    environment, the toolchain version, and the recorded settings.
 - **Order.** Each round runs the workloads in its own shuffled order, so a
   workload's position and predecessor vary between rounds and between sets.
   (The 2026-10-06 baseline ran set A in suite order and set B in reverse,

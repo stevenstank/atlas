@@ -29,9 +29,12 @@
 #   logs/          each setup step's stderr, each invocation's stdout and stderr
 #   failures.txt   only if the campaign failed
 #
-# The driver is built from the checkout, or is the binary named by ATLASBENCH
-# (used by tests). Either way, its build metadata must name HEAD as
-# vcs.revision and say vcs.modified=false before any workload runs.
+# The driver is built from the checkout with plain `go build`, in an
+# environment reduced to PATH and HOME plus GOENV=off, GOFLAGS=, GOWORK=off,
+# and GOTOOLCHAIN=local (BENCHMARKS.md §5). Before any workload runs, its
+# build metadata must name HEAD as vcs.revision, say vcs.modified=false, and
+# show the default build configuration. A binary supplied with ATLASBENCH is
+# refused: its build configuration cannot be established from its metadata.
 #
 # After OUTDIR is claimed, the first failure of a setup step (build, build
 # metadata and provenance, -list, -plan, plan validation) or of a workload
@@ -63,7 +66,10 @@ if ! [[ $seed =~ ^(0|[1-9][0-9]{0,19})$ ]] || [[ ${#seed} -eq 20 && $seed > 1844
 	refuse "SEED must be a decimal integer from 0 to 18446744073709551615 with no sign, prefix, spaces, or leading zero; got '$seed'"
 fi
 
-here=$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)
+[[ -z ${ATLASBENCH+set} ]] || refuse "ATLASBENCH is not supported: a supplied binary's build cannot be verified" \
+	"(go version -m does not record -overlay, -toolexec, or the toolchain); unset it, and the campaign builds its driver"
+unset CDPATH
+here=$(realpath -e -- "$(dirname -- "${BASH_SOURCE[0]}")")
 top=$(git -C "$here" rev-parse --show-toplevel 2>/dev/null) || refuse "$here is not in a git checkout"
 top=$(realpath -e -- "$top") || refuse "cannot resolve the worktree $top"
 commit=$(git -C "$top" rev-parse HEAD 2>/dev/null) || refuse "cannot read HEAD in $top"
@@ -116,16 +122,16 @@ setup() { # setup PHASE STDOUT COMMAND...: run a setup step; record any failure
 		"stderr follows:" "$(cat "$out/$se")"
 }
 
-if [[ ${ATLASBENCH+set} ]]; then
-	driver=$(realpath -e -- "$ATLASBENCH" 2>/dev/null) ||
-		fail "setup: ATLASBENCH='$ATLASBENCH' does not exist" "phase: driver"
-	echo "driver: $driver (supplied by ATLASBENCH)" >>"$out/campaign.txt"
-else
-	driver=$out/atlasbench
-	build() (cd "$top" && go build -o "$driver" ./internal/bench/cmd/atlasbench)
-	setup build logs/setup-build.stdout build
-	echo "driver: $driver (built from $top)" >>"$out/campaign.txt"
-fi
+driver=$out/atlasbench
+# GOENV=off: with only GOFLAGS= the go command would still apply `go env -w` values.
+build_env=(env -i "PATH=$PATH" "HOME=${HOME:-}" GOENV=off GOFLAGS= GOWORK=off GOTOOLCHAIN=local)
+build() (cd "$top" && "${build_env[@]}" go build -o "$driver" ./internal/bench/cmd/atlasbench)
+setup build logs/setup-build.stdout build
+{
+	echo "driver: $driver (built from $top)"
+	echo "build-command: go build -o $driver ./internal/bench/cmd/atlasbench"
+	echo "build-environment: ${build_env[*]:1}"
+} >>"$out/campaign.txt"
 setup buildinfo driver-buildinfo.txt go version -m "$driver"
 vcs() { awk -v key="vcs.$1=" '$1 == "build" && index($2, key) == 1 { n++; v = substr($2, length(key) + 1) }
 	END { if (n == 1) print v }' "$out/driver-buildinfo.txt"; }
@@ -141,6 +147,33 @@ mod=$(vcs modified)
 [[ $mod == false ]] || fail "setup: provenance: the driver's vcs.modified is '${mod:-none}', not false" \
 	"phase: provenance" "buildinfo: driver-buildinfo.txt"
 echo "provenance: ok (vcs.revision is HEAD, vcs.modified=false)" >>"$out/campaign.txt"
+# The recorded settings are informational, not exhaustive (cmd/go): they
+# confirm the build above; the controlled build environment establishes it.
+why=$(awk '
+	function no(msg) { if (why == "") why = msg }
+	$1 == "path" { paths++; if ($2 != "github.com/stevenstank/atlas/internal/bench/cmd/atlasbench") no("main package " $2) }
+	$1 == "dep" { no("dependency " $2 "; the module has none") }
+	$1 == "build" {
+		k = $2; sub(/=.*/, "", k); v = substr($2, length(k) + 2)
+		if (k ~ /^vcs(\.|$)/) next
+		seen[k]++
+		if (k == "-buildmode") { if (v != "exe") no($2) }
+		else if (k == "-compiler") { if (v != "gc") no($2) }
+		else if (k ~ /^CGO_(C|CPP|CXX|LD)FLAGS$/) { if (v != "" || NF > 2) no($2) }
+		else if (k == "GOAMD64") { if (v != "v1") no($2) }
+		else if (k !~ /^(CGO_ENABLED|GOARCH|GOOS|DefaultGODEBUG)$/) no("non-default build setting " $2)
+	}
+	END {
+		if (paths != 1) no("no single main package path")
+		else if (seen["-buildmode"] != 1 || seen["-compiler"] != 1) no("-buildmode or -compiler not recorded once")
+		print why
+	}' "$out/driver-buildinfo.txt")
+{
+	echo "driver-toolchain: $(head -n 1 "$out/driver-buildinfo.txt" | awk '{print $NF}')"
+	echo "driver-build-settings: $(awk '$1 == "build" && $2 !~ /^vcs/ { sub(/^[ \t]*build[ \t]+/, ""); printf "%s%s", sep, $0; sep = "; " }' "$out/driver-buildinfo.txt")"
+} >>"$out/campaign.txt"
+[[ -z $why ]] || fail "setup: build configuration: $why" "phase: build configuration" "buildinfo: driver-buildinfo.txt"
+echo "build-configuration: ok (no build flags, default settings, no dependencies)" >>"$out/campaign.txt"
 
 setup list workloads.txt "$driver" -list
 n=$(wc -l <"$out/workloads.txt")

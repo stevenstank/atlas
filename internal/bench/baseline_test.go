@@ -28,7 +28,7 @@ const fakeGit = `#!/usr/bin/env bash
 args=()
 while (($#)); do
 	case $1 in
-	-C) shift 2 ;;
+	-C) echo "$2" >>"$STUB/git-dirs"; shift 2 ;;
 	--no-optional-locks) shift ;;
 	*) args+=("$1"); shift ;;
 	esac
@@ -41,15 +41,19 @@ case "${args[*]}" in
 esac
 `
 
+// The build runs under env -i, so fake go finds the fixture from its own
+// path, and records the environment it was given in build-env.
 const fakeGo = `#!/usr/bin/env bash
+stub=$(dirname "$(dirname "$(realpath "$0")")")
 case "$1 $2" in
 "build -o")
-	[[ $# -eq 4 && $4 == ./internal/bench/cmd/atlasbench && $PWD == "$FAKE_TOP" ]] || { echo "fake go: unexpected: $* in $PWD" >&2; exit 99; }
-	[[ -z ${FAKE_BUILD_FAIL:-} ]] || { echo "fake go: compile error" >&2; exit 1; }
-	cp "$STUB/atlasbench" "$3" ;;
+	env >"$stub/build-env"
+	[[ $# -eq 4 && $4 == ./internal/bench/cmd/atlasbench && $PWD == "$(cat "$stub/top")" ]] || { echo "fake go: unexpected: $* in $PWD" >&2; exit 99; }
+	[[ ! -e $stub/build-fail ]] || { echo "fake go: compile error" >&2; exit 1; }
+	cp "$stub/atlasbench" "$3" ;;
 "version -m")
-	[[ -f $STUB/buildinfo ]] || { echo "$3: could not read Go build info" >&2; exit 1; }
-	cat "$STUB/buildinfo" ;;
+	[[ -f $stub/buildinfo ]] || { echo "$3: could not read Go build info" >&2; exit 1; }
+	cat "$stub/buildinfo" ;;
 *) echo "fake go: unexpected: $*" >&2; exit 99 ;;
 esac
 `
@@ -82,10 +86,19 @@ esac
 
 const fakeHead = "0123456789abcdef0123456789abcdef01234567"
 
+// goodBuildInfo is `go version -m` of a default build at fakeHead, in the
+// format of the real atlasbench binary of 2026-10-06.
+const goodBuildInfo = "x: go1.26.1\n\tpath\tgithub.com/stevenstank/atlas/internal/bench/cmd/atlasbench\n" +
+	"\tmod\tgithub.com/stevenstank/atlas\t(devel)\t\n\tbuild\t-buildmode=exe\n\tbuild\t-compiler=gc\n" +
+	"\tbuild\tCGO_ENABLED=1\n\tbuild\tCGO_CFLAGS=\n\tbuild\tCGO_CPPFLAGS=\n\tbuild\tCGO_CXXFLAGS=\n" +
+	"\tbuild\tCGO_LDFLAGS=\n\tbuild\tGOARCH=amd64\n\tbuild\tGOOS=linux\n\tbuild\tGOAMD64=v1\n" +
+	"\tbuild\tvcs=git\n\tbuild\tvcs.revision=" + fakeHead + "\n\tbuild\tvcs.modified=false\n"
+
 type fixture struct {
 	t           *testing.T
 	root        string            // holds the stub, the fake worktree, and data/
 	stub, top   string            // stub directory; fake worktree (empty)
+	script, cwd string            // how baseline.sh is invoked, and from where
 	env         map[string]string // test controls for the child process
 	base        []string          // the environment to start from
 	names, plan []string          // -list names; -plan lines
@@ -103,8 +116,12 @@ func newFixture(t *testing.T, rounds int, seed uint64) *fixture {
 	if err != nil {
 		t.Fatal(err)
 	}
+	script, err := filepath.Abs("baseline.sh")
+	if err != nil {
+		t.Fatal(err)
+	}
 	f := &fixture{t: t, root: root, stub: filepath.Join(root, "stub"), top: filepath.Join(root, "repo"),
-		base: os.Environ()}
+		script: script, cwd: root, base: os.Environ()}
 	for _, w := range bench.Workloads() {
 		f.names = append(f.names, w.Name())
 	}
@@ -122,8 +139,7 @@ func newFixture(t *testing.T, rounds int, seed uint64) *fixture {
 	f.write("bin/go", fakeGo)
 	f.write("atlasbench", stubDriver)
 	f.write("porcelain", "")
-	f.write("buildinfo", "x: go1.26.1\n\tpath\tgithub.com/stevenstank/atlas/internal/bench/cmd/atlasbench\n"+
-		"\tbuild\tvcs=git\n\tbuild\tvcs.revision="+fakeHead+"\n\tbuild\tvcs.modified=false\n")
+	f.write("buildinfo", goodBuildInfo)
 	return f
 }
 
@@ -140,22 +156,20 @@ type result struct {
 	stderr string
 }
 
-// run runs baseline.sh OUTDIR. Every variable that steers the script or the
-// stand-ins is dropped from f.base first, so the caller's environment cannot
-// change the outcome; then f.env and the fixture's own settings are added.
+// run runs baseline.sh OUTDIR. Every variable that steers the script, bash
+// (BASH_ENV, ENV, CDPATH), or the stand-ins is dropped from f.base first, so
+// the caller's environment cannot change the outcome; then f.env and the
+// fixture's own settings are added.
 func (f *fixture) run(outdir string) result {
 	f.t.Helper()
 	f.write("list", strings.Join(f.names, "\n")+"\n")
 	f.write("plan", strings.Join(f.plan, "\n")+"\n")
-	script, err := filepath.Abs("baseline.sh")
-	if err != nil {
-		f.t.Fatal(err)
-	}
+	f.write("top", f.top)
 	var env []string
 	for _, kv := range f.base {
 		k, _, _ := strings.Cut(kv, "=")
 		if strings.HasPrefix(k, "STUB") || strings.HasPrefix(k, "FAKE_") || strings.HasPrefix(k, "GIT_") ||
-			slices.Contains([]string{"ALLOW_DIRTY", "ATLASBENCH", "SEED", "RUNS", "PATH"}, k) {
+			slices.Contains([]string{"ALLOW_DIRTY", "ATLASBENCH", "SEED", "RUNS", "PATH", "BASH_ENV", "ENV", "CDPATH"}, k) {
 			continue
 		}
 		env = append(env, kv)
@@ -165,12 +179,12 @@ func (f *fixture) run(outdir string) result {
 	for k, v := range f.env {
 		env = append(env, k+"="+v)
 	}
-	cmd := exec.Command("bash", script, outdir)
-	cmd.Dir = f.root
+	cmd := exec.Command("bash", f.script, outdir)
+	cmd.Dir = f.cwd
 	cmd.Env = env
 	var stderr strings.Builder
 	cmd.Stderr = &stderr
-	err = cmd.Run()
+	err := cmd.Run()
 	r := result{out: outdir, stderr: stderr.String()}
 	if ee, ok := err.(*exec.ExitError); ok {
 		r.code = ee.ExitCode()
@@ -275,6 +289,7 @@ func TestBaselineCampaign(t *testing.T) {
 func TestBaselineRefusals(t *testing.T) {
 	polluted := append(os.Environ(), "ALLOW_DIRTY=1", "GIT_DIR=/nonexistent", "STUB_TARGET=B1",
 		"STUB_MODE=fail", "ATLASBENCH=/bin/true", "FAKE_BUILD_FAIL=")
+	polluted = append(polluted, hostileShell(t)...)
 	for _, inherited := range []struct {
 		name string
 		env  []string
@@ -300,6 +315,10 @@ func TestBaselineRefusals(t *testing.T) {
 					t.Fatal(err)
 				}
 				return filepath.Join(f.root, "link", "c")
+			}},
+			{"supplied binary", "ATLASBENCH is not supported", func(f *fixture) string {
+				f.env["ATLASBENCH"] = filepath.Join(f.stub, "atlasbench") // with valid build info
+				return filepath.Join(f.root, "data", "c")
 			}},
 			{"existing directory", "exists", func(f *fixture) string {
 				d := filepath.Join(f.root, "data", "old")
@@ -427,15 +446,9 @@ func TestBaselineSetupFailures(t *testing.T) {
 		setup                  func(f *fixture)
 	}{
 		{"build", "setup: build exited with status 1", "setup-build.stderr",
-			func(f *fixture) { f.env["FAKE_BUILD_FAIL"] = "1" }},
+			func(f *fixture) { f.write("build-fail", "1") }},
 		{"no build info", "setup: buildinfo exited with status 1", "setup-buildinfo.stderr",
 			func(f *fixture) { os.Remove(filepath.Join(f.stub, "buildinfo")) }},
-		{"supplied binary without build info", "setup: buildinfo exited with status 1", "setup-buildinfo.stderr",
-			func(f *fixture) {
-				f.env["ATLASBENCH"] = filepath.Join(f.stub, "atlasbench")
-				os.Remove(filepath.Join(f.stub, "buildinfo"))
-			}},
-		{"supplied binary missing", "ATLASBENCH=", "", func(f *fixture) { f.env["ATLASBENCH"] = f.root + "/nope" }},
 		{"revision mismatch", "vcs.revision is 'ffffffffffffffffffffffffffffffffffffffff'", "", func(f *fixture) {
 			f.write("buildinfo", "\tbuild\tvcs.revision=ffffffffffffffffffffffffffffffffffffffff\n\tbuild\tvcs.modified=false\n")
 		}},
@@ -585,6 +598,141 @@ func TestBaselineInvocationFailures(t *testing.T) {
 			}
 			if strings.Contains(r.read(t, "campaign.txt"), "result: complete") {
 				t.Error("an invalid campaign reads as complete")
+			}
+		})
+	}
+}
+
+// hostileShell returns bash startup and cd variables that would break a run
+// if they reached it: a BASH_ENV (and ENV) file that sets RUNS=0 and a
+// non-canonical SEED, and a CDPATH holding another internal/bench.
+func hostileShell(t *testing.T) []string {
+	d := t.TempDir()
+	if err := os.MkdirAll(filepath.Join(d, "other", "internal", "bench"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	evil := filepath.Join(d, "evil.sh")
+	if err := os.WriteFile(evil, []byte("RUNS=0\nSEED=010\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return []string{"BASH_ENV=" + evil, "ENV=" + evil, "CDPATH=" + filepath.Join(d, "other")}
+}
+
+// The driver is built in the documented environment whatever the caller's
+// environment holds: inherited build variables (GOFLAGS, a go env file,
+// GOWORK, ...) never reach go build, and a hostile shell environment does not
+// reach the script.
+func TestBaselineBuild(t *testing.T) {
+	f := newFixture(t, 1, 13)
+	f.base = append(os.Environ(), "GOFLAGS=-race -overlay=/tmp/overlay.json", "GOENV=/nonexistent/env",
+		"GOWORK=/nonexistent/go.work", "GOEXPERIMENT=arenas", "GOAMD64=v3", "CGO_CFLAGS=-O0",
+		"GOTOOLCHAIN=go1.99.0", "GOROOT=/nonexistent")
+	f.base = append(f.base, hostileShell(t)...)
+	r := f.run(filepath.Join(f.root, "data", "c"))
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	b, err := os.ReadFile(filepath.Join(f.stub, "build-env"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]string{}
+	for _, kv := range lines(string(b)) {
+		k, v, _ := strings.Cut(kv, "=")
+		got[k] = v
+	}
+	for k, want := range map[string]string{"GOENV": "off", "GOFLAGS": "", "GOWORK": "off", "GOTOOLCHAIN": "local",
+		"HOME": os.Getenv("HOME")} {
+		if v, ok := got[k]; !ok || v != want {
+			t.Errorf("go build saw %s=%q (set %v), want %q", k, v, ok, want)
+		}
+	}
+	for k := range got {
+		if !slices.Contains([]string{"PATH", "HOME", "GOENV", "GOFLAGS", "GOWORK", "GOTOOLCHAIN", "PWD", "SHLVL", "_"}, k) {
+			t.Errorf("go build inherited %s=%s", k, got[k])
+		}
+	}
+	camp := r.read(t, "campaign.txt")
+	for _, want := range []string{"build-command: go build -o " + r.out + "/atlasbench ./internal/bench/cmd/atlasbench\n",
+		" GOENV=off GOFLAGS= GOWORK=off GOTOOLCHAIN=local\n", "driver-toolchain: go1.26.1\n",
+		"driver-build-settings: -buildmode=exe; -compiler=gc; CGO_ENABLED=1; CGO_CFLAGS=;",
+		"build-configuration: ok", "rounds-per-set: 1\n", "master-seed: 13\n", "result: complete"} {
+		if !strings.Contains(camp, want) {
+			t.Errorf("campaign.txt lacks %q:\n%s", want, camp)
+		}
+	}
+}
+
+// Resolving the script's own directory must not go through CDPATH, which
+// could print or pick another checkout's internal/bench.
+func TestBaselineCDPATH(t *testing.T) {
+	f := newFixture(t, 1, 17)
+	here, err := filepath.Abs(".")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if here, err = filepath.EvalSymlinks(here); err != nil {
+		t.Fatal(err)
+	}
+	f.cwd, f.script = filepath.Dir(filepath.Dir(here)), "internal/bench/baseline.sh"
+	f.env["CDPATH"] = strings.TrimPrefix(hostileShell(t)[2], "CDPATH=")
+	r := f.run(filepath.Join(f.root, "data", "c"))
+	if r.code != 0 {
+		t.Fatalf("exit %d: %s", r.code, r.stderr)
+	}
+	b, _ := os.ReadFile(filepath.Join(f.stub, "git-dirs"))
+	if dirs := lines(string(b)); len(dirs) == 0 || dirs[0] != here {
+		t.Errorf("the script looked for its checkout in %q, want %q", dirs, here)
+	}
+}
+
+// The build metadata must show the default configuration; each mutation of
+// a default build's metadata is refused before any workload runs.
+func TestBaselineBuildConfiguration(t *testing.T) {
+	add := func(line string) func(string) string { return func(s string) string { return s + line + "\n" } }
+	swap := func(old, new string) func(string) string {
+		return func(s string) string { return strings.Replace(s, old, new, 1) }
+	}
+	for _, c := range []struct {
+		name   string
+		mutate func(string) string
+	}{
+		{"race", add("\tbuild\t-race=true")},
+		{"gcflags", add("\tbuild\t-gcflags=all=-N -l")},
+		{"ldflags", add("\tbuild\t-ldflags=-s -w")},
+		{"tags", add("\tbuild\t-tags=netgo")},
+		{"trimpath", add("\tbuild\t-trimpath=true")},
+		{"cover", add("\tbuild\t-cover=true")},
+		{"asan", add("\tbuild\t-asan=true")},
+		{"msan", add("\tbuild\t-msan=true")},
+		{"pgo", add("\tbuild\t-pgo=/tmp/default.pgo")},
+		{"GOEXPERIMENT", add("\tbuild\tGOEXPERIMENT=arenas")},
+		{"GOFIPS140", add("\tbuild\tGOFIPS140=v1.0.0")},
+		{"unknown setting", add("\tbuild\tFOO=bar")},
+		{"dependency", add("\tdep\texample.com/x\tv1.0.0\th1:abc=")},
+		{"GOAMD64", swap("GOAMD64=v1", "GOAMD64=v3")},
+		{"CGO_CFLAGS", swap("CGO_CFLAGS=\n", "CGO_CFLAGS=-O0\n")},
+		{"CGO_LDFLAGS spaces", swap("CGO_LDFLAGS=\n", "CGO_LDFLAGS= -lfoo\n")},
+		{"buildmode", swap("-buildmode=exe", "-buildmode=pie")},
+		{"compiler missing", swap("\tbuild\t-compiler=gc\n", "")},
+		{"other package", swap("cmd/atlasbench\n", "cmd/other\n")},
+		{"no path", swap("\tpath\tgithub.com/stevenstank/atlas/internal/bench/cmd/atlasbench\n", "")},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			f := newFixture(t, 1, 19)
+			f.write("buildinfo", c.mutate(goodBuildInfo))
+			r := f.run(filepath.Join(f.root, "data", "c"))
+			if r.code != 1 || r.read(t, "status") != "invalid\n" {
+				t.Fatalf("exit %d: %s", r.code, r.stderr)
+			}
+			if fail := r.read(t, "failures.txt"); !strings.Contains(fail, "phase: build configuration") {
+				t.Errorf("failures.txt:\n%s", fail)
+			}
+			if camp := r.read(t, "campaign.txt"); strings.Contains(camp, "build-configuration: ok") {
+				t.Errorf("campaign.txt claims the build configuration:\n%s", camp)
+			}
+			if calls := f.benchCalls(); len(calls) != 0 {
+				t.Errorf("workloads ran: %v", calls)
 			}
 		})
 	}
