@@ -13,7 +13,7 @@ Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). On 2026-10-05 the owner
 accepted D-010 and D-013 at the Phase 2 review, and on 2026-10-06
 D-014 for benchmark B7 and D-007 for the Phase 3 baseline (D-007 amended on
 2026-10-14). On 2026-10-21 the owner accepted D-015, the dependency
-direction of D-009, and D-016. The other records keep the
+direction of D-009, D-016, and D-017. The other records keep the
 status shown in their headings.
 
 ## Phase 0 decisions (accepted 2026-10-04)
@@ -937,7 +937,7 @@ optional report in §3), best-first search, and checking `Prune`/`Bound`
 without `VerifyPruning`: an invalid callback then can make `Optimal` or
 `Infeasible` wrong, which is the user's obligation (§5).
 
-## D-017 Runnable examples as the first release-packaging item — Proposed (2026-10-21)
+## D-017 Runnable examples as the first release-packaging item — Accepted (2026-10-21)
 
 **Context.** ROADMAP Phase 6 lists release packaging ("examples compile").
 VISION's success criteria include a newcomer writing a small model and

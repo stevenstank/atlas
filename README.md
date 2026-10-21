@@ -48,9 +48,10 @@ See [docs/VISION.md](docs/VISION.md).
   same verdict and trace. Every counterexample replays through the model.
 - **Evidence-based performance.** Measure first, then optimize. Every
   performance claim will be backed by the reproducible benchmark procedure in
-  [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Baseline reports are in
-  [docs/benchmarks/](docs/benchmarks/); they describe Atlas's own costs, and
-  Atlas makes no claims of being faster than any other tool.
+  [docs/BENCHMARKS.md](docs/BENCHMARKS.md). The Phase 3 baseline reports of
+  the unoptimized engine, on one machine, are in
+  [docs/benchmarks/](docs/benchmarks/). Atlas makes no claims of being faster
+  than any other tool.
 - **Standard library first.** No dependency without a measured justification.
 
 ## What Atlas checks, and what it doesn't
