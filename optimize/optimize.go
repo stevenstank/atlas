@@ -15,8 +15,9 @@ import (
 
 // DefaultCheckInterval is the default K in the interruption schedule: the
 // context is checked before search steps 1, 1+K, 1+2K, ..., where a step is
-// an evaluation, a node (Stats.Nodes), or a verification evaluation. Without
-// Prune, Bound, and VerifyPruning, the steps are the evaluations.
+// an evaluation, a node (Stats.Nodes), or a verification evaluation: that is,
+// before a step when Evaluations + Nodes + Verified is a multiple of K.
+// Without Prune, Bound, and VerifyPruning, the steps are the evaluations.
 const DefaultCheckInterval = 1024
 
 // ErrInvalidConfig is wrapped by every error Solve returns: an invalid

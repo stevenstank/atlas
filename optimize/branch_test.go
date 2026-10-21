@@ -201,6 +201,51 @@ func TestBranchAndBoundLimitsAndInterruption(t *testing.T) {
 		if (res.Status != optimize.BestFound && res.Status != optimize.NoneFound) || res.Reason != optimize.Canceled {
 			t.Errorf("canceled in Feasible call %d: got %+v", c, res)
 		}
+		// BestFound exactly when the search found a feasible assignment,
+		// and then that assignment and its value.
+		if (res.Status == optimize.BestFound) != (res.Stats.Feasible > 0) ||
+			res.Status == optimize.BestFound && (!feasible(res.Assignment) || q.Objective(res.Assignment) != res.Value) {
+			t.Errorf("canceled in Feasible call %d: got %+v", c, res)
+		}
+	}
+}
+
+// The context is checked before a step when Evaluations + Nodes + Verified
+// (the steps completed) is a multiple of K. Without Prune, Bound, and
+// VerifyPruning, that is D-015's schedule: before evaluations 1, 1+K, ...
+func TestCheckSchedule(t *testing.T) {
+	never := func([]bool) bool { return false }
+	for _, c := range []struct {
+		name   string
+		prune  func([]bool) bool
+		cancel int // the Feasible (or Prune, when set) call that cancels
+		want   optimize.Stats
+	}{
+		// Canceled in evaluation 2: checked again before evaluation 5.
+		{"exhaustive", nil, 2, optimize.Stats{Evaluations: 4, Feasible: 3}},
+		// Canceled in Prune at the root. Steps: nodes "", "F", "FF", then
+		// evaluation FFF; the check before step 5 stops it.
+		{"with nodes", never, 1, optimize.Stats{Evaluations: 1, Feasible: 1, Nodes: 3}},
+	} {
+		ctx, cancel := context.WithCancel(context.Background())
+		p := knapsack()
+		calls := 0
+		count := func() {
+			if calls++; calls == c.cancel {
+				cancel()
+			}
+		}
+		if c.prune != nil {
+			p.Prune = func(a []bool) bool { count(); return c.prune(a) }
+		} else {
+			feasible := p.Feasible
+			p.Feasible = func(a []bool) bool { count(); return feasible(a) }
+		}
+		res := solve(t, ctx, p, optimize.Config{CheckInterval: 4})
+		cancel()
+		if res.Status != optimize.BestFound || res.Reason != optimize.Canceled || res.Stats != c.want {
+			t.Errorf("%s: got %+v, want BestFound Canceled with %+v", c.name, res, c.want)
+		}
 	}
 }
 
