@@ -141,9 +141,11 @@ func (e *engine[S, A]) callModel(f func()) {
 }
 
 // accept validates an emit call against the contract (D-001). It returns
-// false, after recording a ModelError, if the call is invalid.
+// false, after recording a ModelError, if the call is invalid. Once the run
+// has ended, every emission is refused: a misused retained callback ends it
+// without stopping the current call's own guard.
 func (e *engine[S, A]) accept(g *guard) bool {
-	if g.active && !g.stopped {
+	if g.active && !g.stopped && e.end == nil {
 		return true
 	}
 	g.stopped = true

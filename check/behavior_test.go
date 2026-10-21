@@ -162,6 +162,57 @@ func TestCallbackMisuseIsModelError(t *testing.T) {
 	}
 }
 
+// A Next callback retained from one expansion and called during a later one
+// is a detected contract violation (D-001) and ends the run (D-012). The
+// result stays ModelError: an emission on the current call's own callback
+// after the detection is refused and not counted, whatever it would have
+// caused.
+func TestRegression_RetainedNextCallbackIsTerminal(t *testing.T) {
+	target := models.Cell{X: 2, Y: 2}
+	notTarget := []check.Invariant[models.Cell]{{Name: "NotTarget", Holds: func(c models.Cell) bool { return c != target }}}
+	for _, c := range []struct {
+		name string
+		cfg  cellCfg
+	}{
+		{"then violation", cellCfg{Invariants: notTarget}},
+		{"then state-limit refusal", cellCfg{MaxStates: check.Max(2)}},
+		{"then new state", cellCfg{}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var saved func(string, models.Cell) bool
+			stale, later := true, true
+			m := hooked[models.Cell, string]{Model: models.Origin, next: func(s models.Cell, emit func(string, models.Cell) bool) {
+				switch s {
+				case models.Cell{}:
+					saved = emit
+					emit("IncX", models.Cell{X: 1})
+				case models.Cell{X: 1}:
+					stale = saved("stale", models.Cell{Y: 1})
+					later = emit("later", target)
+				}
+			}}
+			res := run(t, context.Background(), m, c.cfg)
+			st := res.Stats
+			if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+				t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+			}
+			if stale || later {
+				t.Errorf("stale emit returned %v, later emit returned %v; want false, false", stale, later)
+			}
+			if st.InitEmissions != 1 || st.InitAdmitted != 1 || st.InitDuplicates != 0 || st.Admitted != 2 ||
+				st.Expanded != 2 || st.Transitions != 1 || st.Duplicates != 0 || st.CutoffTransitions != 0 ||
+				st.StateLimitRefusals != 0 {
+				t.Errorf("counts %+v", st)
+			}
+			// I1 and I2 (D-012); no refusal in either phase.
+			if st.InitEmissions != st.InitAdmitted+st.InitDuplicates ||
+				st.Transitions != (st.Admitted-st.InitAdmitted)+st.Duplicates+st.CutoffTransitions {
+				t.Errorf("I1 or I2 does not hold: %+v", st)
+			}
+		})
+	}
+}
+
 func TestModelPanicsAreModelErrors(t *testing.T) {
 	keys := 0
 	panicKey := hooked[models.Jug, string]{Model: models.Jugs{}, key: func(buf []byte, j models.Jug) []byte {
