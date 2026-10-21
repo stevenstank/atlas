@@ -35,7 +35,7 @@ of those four blocks Phase 1, so they are not listed.
 
 ---
 
-## D-001 Model interface and state ownership — Accepted (2026-10-04): option 3b
+## D-001 Model interface and state ownership — Accepted (2026-10-04): option 3b, amended (2026-10-21)
 
 **Context.** The interface determines how easy models are to write, how much
 the engine allocates, and whether traces carry readable action labels.
@@ -73,9 +73,14 @@ the engine allocates, and whether traces carry readable action labels.
        "Counting rule"). An invalid one is never counted, and the run ends
        with `ModelError`.
      - **Synchronous and confined.** `emit` may be called only synchronously,
-       from the goroutine running `Init`/`Next`, during that call.
+       from the goroutine running `Init`/`Next`, during that call, and not
+       while the engine is handling another emission. Model code that the
+       engine runs while it handles an emission (`AppendKey`, an invariant)
+       must not call any `emit` callback: such a nested call is a contract
+       violation.
        - *Guaranteed detection:* a same-goroutine call after `false` within
-         that call → `ModelError`.
+         that call → `ModelError`. A same-goroutine nested call, on any
+         callback → `ModelError`.
        - *Best effort:* the engine invalidates each callback when the call
          returns, so a later call on a retained callback is reported as
          `ModelError` if the run is still in progress and the call is
@@ -83,6 +88,13 @@ the engine allocates, and whether traces carry readable action labels.
        - *Undefined:* a call from another goroutine, or after the run has
          finished. Results of such a run carry no guarantee.
      - Earlier steps keep their positions, so replay (D-005) is unaffected.
+     - **A detected violation ends the run.** Once the engine detects a
+       contract violation, the result is `ModelError` with
+       `ErrCallbackContract`. Nothing the model does afterwards in that run
+       replaces it: a later emission, an invariant failure, a limit, the
+       `DetectMutation` check, or a panic (D-001 amendment, 2026-10-21). A
+       violation detected after `false` also replaces the `Violation` or
+       `Bounded` result that returned `false`.
 4. **Iterator.** `Next(s S) iter.Seq2[A, S]`, `Init() iter.Seq[S]`. The engine
    consumes with `for … range` and stops by leaving the loop, which makes
    `yield` return `false`. Two kinds of guarantee apply:
@@ -118,6 +130,23 @@ What 3b does **not** do: it cannot interrupt model code that never returns,
 or that ignores `false` (keeps computing, or emits again from another
 goroutine where detection is not guaranteed). Such code still hangs or wastes
 the run, as under every option.
+
+**Amendment (accepted 2026-10-21, Phase 4 candidate 3 review).**
+- **Why.** The contract did not say whether `emit` may be called from
+  `AppendKey` or an invariant while the engine handles an emission. Such a
+  nested call was accepted: it overwrote the engine's key buffer, so a run
+  of Grid2 reported `Exhausted` with 7 of 9 reachable states, and it stored
+  a state with a wrong depth and edge ordinal, which replay (D-005) cannot
+  reproduce. Separately, a misuse detected inside `AppendKey` or an
+  invariant could be replaced by a later violation, refusal, mutation
+  error, or panic.
+- **Decision.** Nested calls are contract violations, detected on every
+  same-goroutine call. The first detected contract violation is the run's
+  result, as stated under 3b.
+- **Consequences.** Models that emitted from `AppendKey` or an invariant
+  are now rejected. No model in this repository does. Counters follow the
+  D-012 counting rule: a nested emission is never counted, and the
+  emission it interrupted is counted only if it was already examined.
 
 Bound and initialization semantics (D-012) are the same under all three options. Only
 the handling of emissions after termination differs (D-012, Initialization

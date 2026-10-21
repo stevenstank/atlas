@@ -9,7 +9,8 @@ package core
 //   - emit returns true to continue. false means stop: make no further emit
 //     calls and return promptly. false never means "skip this one".
 //   - emit may be called only synchronously, from the goroutine running Init
-//     or Next, during that call.
+//     or Next, during that call, and not from AppendKey or an invariant while
+//     the engine is handling an emission.
 //   - Emitted states belong to the engine and must not be mutated afterwards.
 //   - AppendKey appends the canonical encoding of s to buf. Two states are
 //     the same state if and only if their keys are equal (D-002).

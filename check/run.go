@@ -72,9 +72,10 @@ type engine[S, A any] struct {
 	depthLimit, stateLimit int
 	hasDepth, hasStates    bool
 
-	inModel bool          // model code is on the stack; a panic is a ModelError
-	end     *Result[S, A] // set when the run must stop
-	endID   core.StateID  // the violating state, when end is a Violation
+	inModel  bool          // model code is on the stack; a panic is a ModelError
+	emitting bool          // engine code is handling an emission
+	end      *Result[S, A] // set when the run must stop
+	endID    core.StateID  // the violating state, when end is a Violation
 }
 
 func (e *engine[S, A]) run() (res Result[S, A]) {
@@ -84,6 +85,9 @@ func (e *engine[S, A]) run() (res Result[S, A]) {
 				panic(r) // engine bug: do not disguise it as a model error
 			}
 			res = Result[S, A]{Status: ModelError, Err: &PanicError{Value: r}}
+			if e.end != nil && errors.Is(e.end.Err, ErrCallbackContract) {
+				res = *e.end // a contract violation detected first stays the error
+			}
 		}
 	}()
 
@@ -108,8 +112,14 @@ func (e *engine[S, A]) run() (res Result[S, A]) {
 			}
 		}
 		it := e.queue.Pop()
-		if e.cfg.DetectMutation && string(e.key(it.state)) != e.store.Key(it.id) {
-			return Result[S, A]{Status: ModelError, Err: ErrStateMutated}
+		if e.cfg.DetectMutation {
+			mutated := string(e.key(it.state)) != e.store.Key(it.id)
+			if e.end != nil { // AppendKey ended the run
+				return e.finish()
+			}
+			if mutated {
+				return Result[S, A]{Status: ModelError, Err: ErrStateMutated}
+			}
 		}
 		e.stats.Expanded++
 		depth := e.store.Depth(it.id)
@@ -141,11 +151,16 @@ func (e *engine[S, A]) callModel(f func()) {
 }
 
 // accept validates an emit call against the contract (D-001). It returns
-// false, after recording a ModelError, if the call is invalid. Once the run
+// false, after recording a ModelError, if the call is invalid, including a
+// nested call made while the engine handles another emission. Once the run
 // has ended, every emission is refused: a misused retained callback ends it
-// without stopping the current call's own guard.
-func (e *engine[S, A]) accept(g *guard) bool {
-	if g.active && !g.stopped && e.end == nil {
+// without stopping the current call's own guard. Model code that the engine
+// calls while it handles an emission (AppendKey, an invariant) can end the
+// run this way, so the engine checks e.end after each such call: the
+// emission stops there, does not replace the result, and is counted only if
+// it was already examined.
+func (e *engine[S, A]) accept(g *guard, nested bool) bool {
+	if g.active && !g.stopped && !nested && e.end == nil {
 		return true
 	}
 	g.stopped = true
@@ -156,28 +171,38 @@ func (e *engine[S, A]) accept(g *guard) bool {
 // emitInit and emitNext run engine code inside a model call. They clear
 // inModel on entry and restore it on return, without defer: a model panic
 // below them leaves inModel set by callModel, while an engine panic leaves
-// it clear and is re-raised by run.
+// it clear and is re-raised by run. They mark the emission as in progress
+// the same way, so an emit call from AppendKey or an invariant is nested.
 func (e *engine[S, A]) emitInit(g *guard, s S) bool {
 	e.inModel = false
-	ok := e.initStep(g, s)
+	nested := e.emitting
+	e.emitting = true
+	ok := e.initStep(g, nested, s)
+	e.emitting = nested
 	e.inModel = true
 	return ok
 }
 
 func (e *engine[S, A]) emitNext(g *guard, parent core.StateID, depth uint32, s S) bool {
 	e.inModel = false
-	ok := e.nextStep(g, parent, depth, s)
+	nested := e.emitting
+	e.emitting = true
+	ok := e.nextStep(g, nested, parent, depth, s)
+	e.emitting = nested
 	e.inModel = true
 	return ok
 }
 
-func (e *engine[S, A]) initStep(g *guard, s S) bool {
-	if !e.accept(g) {
+func (e *engine[S, A]) initStep(g *guard, nested bool, s S) bool {
+	if !e.accept(g, nested) {
 		return false
 	}
 	ordinal := g.n
 	g.n++
 	key := e.key(s)
+	if e.end != nil {
+		return false
+	}
 	if _, seen := e.store.Lookup(key); seen {
 		e.stats.InitEmissions++
 		e.stats.InitDuplicates++
@@ -196,13 +221,16 @@ func (e *engine[S, A]) initStep(g *guard, s S) bool {
 	return e.admit(g, s, key, core.NoParent, ordinal, 0)
 }
 
-func (e *engine[S, A]) nextStep(g *guard, parent core.StateID, depth uint32, s S) bool {
-	if !e.accept(g) {
+func (e *engine[S, A]) nextStep(g *guard, nested bool, parent core.StateID, depth uint32, s S) bool {
+	if !e.accept(g, nested) {
 		return false
 	}
 	ordinal := g.n
 	g.n++
 	key := e.key(s)
+	if e.end != nil {
+		return false
+	}
 	if _, seen := e.store.Lookup(key); seen {
 		e.stats.Transitions++
 		e.stats.Duplicates++
@@ -238,7 +266,11 @@ func (e *engine[S, A]) admit(g *guard, s S, key []byte, parent core.StateID, ord
 	if int(depth) > e.stats.MaxDepth {
 		e.stats.MaxDepth = int(depth)
 	}
-	if name, ok := e.violated(s); ok {
+	name, bad := e.violated(s)
+	if e.end != nil {
+		return false
+	}
+	if bad {
 		g.stopped = true
 		e.end = &Result[S, A]{Status: Violation, Violation: &Counterexample[S, A]{Invariant: name}}
 		e.endID = id
@@ -254,6 +286,9 @@ func (e *engine[S, A]) violated(s S) (string, bool) {
 	for _, inv := range e.cfg.Invariants {
 		ok := true
 		e.callModel(func() { ok = inv.Holds(s) })
+		if e.end != nil {
+			return "", false
+		}
 		if !ok {
 			return inv.Name, true
 		}

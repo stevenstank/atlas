@@ -145,7 +145,7 @@ only under their preconditions (§6).
 | `TestEmptyInit` | `Init` emits nothing, with or without limits | `ModelError`, every count 0, never `Exhausted` | E1, E2 |
 | `TestCancelDuringInit` | Cancellation requested from inside `Init`, K = 1 | observed before dequeue 1. `Incomplete` with the counts from initialization, unless initialization already ended the run | multi-init model with no limit (expected IE 5, IA 4, ID 1) |
 | `TestModelErrorCounting` | Panic in `AppendKey` on the k-th successor emission | `ModelError`; that emission is uncounted; I1 and I2 hold | any reference model with an injected panic |
-| `TestCallbackContract` *(depends on D-001)* | 3b: emit after `false`, and emit on a retained callback after return. 4: yield after `false`. 3a: emissions after a terminal condition | 3b: `ModelError` (same-goroutine after `false`: guaranteed; retained callback: best effort). 4: `ModelError` via gc detection, checked on the pinned toolchain. 3a: discarded and uncounted | written once D-001 is decided |
+| `TestCallbackContract` *(depends on D-001)* | 3b: emit after `false`, emit on a retained callback after return, and a nested emit from `AppendKey` or an invariant. 4: yield after `false`. 3a: emissions after a terminal condition | 3b: `ModelError` (same-goroutine after `false`: guaranteed; nested emit: guaranteed; retained callback: best effort); a later model panic does not replace `ErrCallbackContract`. 4: `ModelError` via gc detection, checked on the pinned toolchain. 3a: discarded and uncounted | written once D-001 is decided |
 
 Additional checks: under a depth limit, the admitted set equals the
 reference explorer's states at depth ≤ D. Under a state limit, the admitted

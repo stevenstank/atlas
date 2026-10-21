@@ -79,8 +79,9 @@ type Model[S any, A any] interface {
     Init(emit func(S) bool)
     // Next emits (action, successor) pairs for s in a deterministic order,
     // with the same stop rule. emit may be called only synchronously, from
-    // this goroutine, during this call. It must not mutate s or retain
-    // emitted states for mutation.
+    // this goroutine, during this call, and not from AppendKey or an
+    // invariant while the engine is handling an emission. It must not
+    // mutate s or retain emitted states for mutation.
     Next(s S, emit func(A, S) bool)
     // AppendKey appends the canonical encoding of s to buf and returns it.
     AppendKey(buf []byte, s S) []byte

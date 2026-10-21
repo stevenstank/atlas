@@ -3,6 +3,7 @@ package check_test
 import (
 	"context"
 	"errors"
+	"fmt"
 	"reflect"
 	"strings"
 	"testing"
@@ -211,6 +212,508 @@ func TestRegression_RetainedNextCallbackIsTerminal(t *testing.T) {
 			}
 		})
 	}
+}
+
+// checkStats compares every counted statistic (all but WallTime) and checks
+// I1 and I2 (D-012).
+func checkStats(t *testing.T, got, want check.Stats) {
+	t.Helper()
+	got.WallTime = 0
+	if got != want {
+		t.Errorf("stats\n got %+v\nwant %+v", got, want)
+	}
+	var rInit, rExp int64
+	switch got.RefusalPhase {
+	case check.InitPhase:
+		rInit = got.StateLimitRefusals
+	case check.ExpansionPhase:
+		rExp = got.StateLimitRefusals
+	}
+	if got.InitEmissions != got.InitAdmitted+got.InitDuplicates+rInit ||
+		got.Transitions != (got.Admitted-got.InitAdmitted)+got.Duplicates+got.CutoffTransitions+rExp {
+		t.Errorf("I1 or I2 does not hold: %+v", got)
+	}
+}
+
+// A Next callback retained from the first expansion and called during the
+// third, after that call's own first emission, is detected (D-001) although
+// another expansion ran in between. The current callback's next emission
+// would be a violation; it is refused and not counted.
+func TestRegression_RetainedNextCallbackFromEarlierExpansion(t *testing.T) {
+	var saved func(string, models.Cell) bool
+	var rets []bool
+	m := hooked[models.Cell, string]{Model: models.Origin, next: func(s models.Cell, emit func(string, models.Cell) bool) {
+		switch s {
+		case models.Cell{}:
+			saved = emit
+		case models.Cell{Y: 1}: // the third expansion
+			rets = append(rets, emit("IncX", models.Cell{X: 1, Y: 1}))
+			rets = append(rets, saved("stale", models.Cell{X: 2, Y: 2}))
+			rets = append(rets, emit("IncY", models.Cell{Y: 2}))
+			return
+		}
+		models.Origin.Next(s, emit)
+	}}
+	notY2 := []check.Invariant[models.Cell]{{Name: "NotY2", Holds: func(c models.Cell) bool { return c != models.Cell{Y: 2} }}}
+	res := run(t, context.Background(), m, cellCfg{Invariants: notY2})
+	if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+		t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+	}
+	if want := []bool{true, false, false}; !reflect.DeepEqual(rets, want) {
+		t.Errorf("emit returned %v, want %v", rets, want)
+	}
+	checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 5, Expanded: 3,
+		Transitions: 5, Duplicates: 1, MaxDepth: 2, FrontierPeak: 3})
+}
+
+// A Next callback called between expansions, from the AppendKey that
+// DetectMutation runs on the next dequeued state, is detected (D-001). No
+// later Next call has started yet, so the callback still belongs to the
+// latest call; it is invalid because that call has returned. The detection
+// ends the run there: the dequeued state is not expanded, and a key mismatch
+// found by the same check does not replace the error.
+func TestRegression_RetainedNextCallbackBetweenExpansions(t *testing.T) {
+	for _, mutated := range []bool{false, true} {
+		t.Run(fmt.Sprintf("mutated %v", mutated), func(t *testing.T) {
+			var saved func(string, models.Cell) bool
+			armed, stale, nexts := false, true, 0
+			m := hooked[models.Cell, string]{Model: models.Origin,
+				next: func(s models.Cell, emit func(string, models.Cell) bool) {
+					nexts++
+					models.Origin.Next(s, emit)
+					if s == (models.Cell{}) {
+						saved, armed = emit, true
+					}
+				},
+				key: func(buf []byte, c models.Cell) []byte {
+					if armed { // the mutation check of (1,0), before its Next call
+						armed = false
+						stale = saved("stale", models.Cell{X: 2, Y: 2})
+						if mutated {
+							return append(buf, 9, 9)
+						}
+					}
+					return models.Origin.AppendKey(buf, c)
+				}}
+			res := run(t, context.Background(), m, cellCfg{DetectMutation: true})
+			if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+				t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+			}
+			if stale || nexts != 1 {
+				t.Errorf("stale emit returned %v, Next called %d times; want false, 1", stale, nexts)
+			}
+			checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 3, Expanded: 1,
+				Transitions: 2, MaxDepth: 1, FrontierPeak: 2})
+		})
+	}
+}
+
+// A Next callback retained from the first expansion and called from
+// AppendKey while the engine encodes an emission of the second ends the run
+// before that emission is examined (D-012 counting rule): it is not counted
+// in any branch, emit returns false, and the run is a ModelError whatever
+// the emission would have become.
+func TestRegression_RetainedNextCallbackFromAppendKey(t *testing.T) {
+	notX2 := []check.Invariant[models.Cell]{{Name: "NotX2", Holds: func(c models.Cell) bool { return c != models.Cell{X: 2} }}}
+	for _, c := range []struct {
+		name string
+		cfg  cellCfg
+	}{
+		{"would be admitted", cellCfg{}},
+		{"would be a violation", cellCfg{Invariants: notX2}},
+		{"would be refused by the state limit", cellCfg{MaxStates: check.Max(3)}},
+		{"would be cut off by the depth limit", cellCfg{MaxDepth: check.Max(1)}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var saved func(string, models.Cell) bool
+			var rets []bool
+			second, stale := false, true
+			m := hooked[models.Cell, string]{Model: models.Origin,
+				next: func(s models.Cell, emit func(string, models.Cell) bool) {
+					switch s {
+					case models.Cell{}:
+						saved = emit
+						models.Origin.Next(s, emit)
+					case models.Cell{X: 1}: // the second expansion
+						second = true
+						rets = append(rets, emit("IncX", models.Cell{X: 2}))
+						if rets[0] {
+							rets = append(rets, emit("IncY", models.Cell{X: 1, Y: 1}))
+						}
+						second = false
+					}
+				},
+				key: func(buf []byte, s models.Cell) []byte {
+					if second && s == (models.Cell{X: 2}) {
+						stale = saved("stale", models.Cell{X: 2, Y: 2})
+					}
+					return models.Origin.AppendKey(buf, s)
+				}}
+			res := run(t, context.Background(), m, c.cfg)
+			if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+				t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+			}
+			if want := []bool{false}; stale || !reflect.DeepEqual(rets, want) {
+				t.Errorf("stale emit returned %v, emit returned %v; want false, %v", stale, rets, want)
+			}
+			checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 3, Expanded: 2,
+				Transitions: 2, MaxDepth: 1, FrontierPeak: 2})
+		})
+	}
+}
+
+// A Next callback retained from the first expansion and called from an
+// invariant during the second is detected (D-001), whatever the invariant
+// then returns. The state being checked stays counted as admitted (D-012),
+// no later invariant runs on it, emit returns false, and the run is a
+// ModelError, not a Violation.
+func TestRegression_RetainedNextCallbackFromInvariant(t *testing.T) {
+	for _, holds := range []bool{true, false} {
+		t.Run(fmt.Sprintf("invariant returns %v", holds), func(t *testing.T) {
+			var saved func(string, models.Cell) bool
+			var rets []bool
+			stale, calls, later := true, 0, 0
+			m := hooked[models.Cell, string]{Model: models.Origin, next: func(s models.Cell, emit func(string, models.Cell) bool) {
+				switch s {
+				case models.Cell{}:
+					saved = emit
+					models.Origin.Next(s, emit)
+				case models.Cell{X: 1}: // the second expansion
+					if calls++; calls > 1 { // trace replay, if the run (wrongly) has a trace
+						models.Origin.Next(s, emit)
+						return
+					}
+					rets = append(rets, emit("IncX", models.Cell{X: 2}))
+					if rets[0] {
+						rets = append(rets, emit("IncY", models.Cell{X: 1, Y: 1}))
+					}
+				}
+			}}
+			inv := []check.Invariant[models.Cell]{
+				{Name: "Calls", Holds: func(c models.Cell) bool {
+					if c != (models.Cell{X: 2}) {
+						return true
+					}
+					stale = saved("stale", models.Cell{X: 2, Y: 2})
+					return holds
+				}},
+				{Name: "Later", Holds: func(c models.Cell) bool {
+					if c == (models.Cell{X: 2}) {
+						later++
+					}
+					return true
+				}},
+			}
+			res := run(t, context.Background(), m, cellCfg{Invariants: inv})
+			if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+				t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+			}
+			if want := []bool{false}; stale || !reflect.DeepEqual(rets, want) {
+				t.Errorf("stale emit returned %v, emit returned %v; want false, %v", stale, rets, want)
+			}
+			if later != 0 {
+				t.Errorf("a later invariant ran %d times on the state after the run ended", later)
+			}
+			checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 4, Expanded: 2,
+				Transitions: 3, MaxDepth: 2, FrontierPeak: 2})
+		})
+	}
+}
+
+// An emit call from AppendKey while the engine encodes another emission of
+// the same Next call is a nested emission, a contract violation (D-001). It
+// is refused before it can touch the key buffer: unchecked, it overwrote the
+// outer key, so (1,0) was taken for a duplicate of the nested (0,2) and the
+// run was Exhausted with 7 of Grid2's 9 states. Neither emission is counted,
+// whatever the nested one would have become.
+func TestRegression_NestedEmitFromAppendKey(t *testing.T) {
+	notY2 := []check.Invariant[models.Cell]{{Name: "NotY2", Holds: func(c models.Cell) bool { return c != models.Cell{Y: 2} }}}
+	for _, appendFirst := range []bool{true, false} {
+		for _, c := range []struct {
+			name string
+			cfg  cellCfg
+		}{
+			{"would be admitted", cellCfg{}},
+			{"would be a violation", cellCfg{Invariants: notY2}},
+			{"would be refused by the state limit", cellCfg{MaxStates: check.Max(1)}},
+		} {
+			t.Run(fmt.Sprintf("append first %v, %s", appendFirst, c.name), func(t *testing.T) {
+				var cur func(string, models.Cell) bool
+				var rets, nested []bool
+				m := hooked[models.Cell, string]{Model: models.Origin,
+					next: func(s models.Cell, emit func(string, models.Cell) bool) {
+						cur = emit
+						models.Origin.Next(s, func(a string, c models.Cell) bool {
+							ok := emit(a, c)
+							rets = append(rets, ok)
+							return ok
+						})
+						cur = nil
+					},
+					key: func(buf []byte, s models.Cell) []byte {
+						if cur == nil || s != (models.Cell{X: 1}) || len(nested) > 0 {
+							return models.Origin.AppendKey(buf, s)
+						}
+						if appendFirst {
+							buf = models.Origin.AppendKey(buf, s)
+							nested = append(nested, cur("nested", models.Cell{Y: 2}))
+							return buf
+						}
+						nested = append(nested, cur("nested", models.Cell{Y: 2}))
+						return models.Origin.AppendKey(buf, s)
+					}}
+				res := run(t, context.Background(), m, c.cfg)
+				if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+					t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+				}
+				if !reflect.DeepEqual(nested, []bool{false}) || !reflect.DeepEqual(rets, []bool{false}) {
+					t.Errorf("nested emit returned %v, outer emit returned %v; want [false], [false]", nested, rets)
+				}
+				checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 1, Expanded: 1,
+					MaxDepth: 0, FrontierPeak: 1})
+			})
+		}
+	}
+}
+
+// An emit call from an invariant while the engine checks an admitted state
+// is a nested emission (D-001), whatever the invariant then returns. The
+// checked state stays counted as admitted (D-012); the nested emission is
+// not counted, no later invariant runs, and the run is not a Violation.
+func TestRegression_NestedEmitFromInvariant(t *testing.T) {
+	for _, holds := range []bool{true, false} {
+		t.Run(fmt.Sprintf("invariant returns %v", holds), func(t *testing.T) {
+			var cur func(string, models.Cell) bool
+			var rets, nested []bool
+			later := 0
+			m := hooked[models.Cell, string]{Model: models.Origin, next: func(s models.Cell, emit func(string, models.Cell) bool) {
+				cur = emit
+				models.Origin.Next(s, func(a string, c models.Cell) bool {
+					ok := emit(a, c)
+					rets = append(rets, ok)
+					return ok
+				})
+				cur = nil
+			}}
+			inv := []check.Invariant[models.Cell]{
+				{Name: "Nests", Holds: func(c models.Cell) bool {
+					if cur == nil || c != (models.Cell{X: 1}) || len(nested) > 0 {
+						return true
+					}
+					nested = append(nested, cur("nested", models.Cell{Y: 2}))
+					return holds
+				}},
+				{Name: "Later", Holds: func(c models.Cell) bool {
+					if c == (models.Cell{X: 1}) {
+						later++
+					}
+					return true
+				}},
+			}
+			res := run(t, context.Background(), m, cellCfg{Invariants: inv})
+			if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+				t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+			}
+			if !reflect.DeepEqual(nested, []bool{false}) || !reflect.DeepEqual(rets[:1], []bool{false}) {
+				t.Errorf("nested emit returned %v, outer emit returned %v; want [false], [false ...]", nested, rets)
+			}
+			if later != 0 {
+				t.Errorf("a later invariant ran %d times on the state after the run ended", later)
+			}
+			checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 2, Expanded: 1,
+				Transitions: 1, MaxDepth: 1, FrontierPeak: 1})
+		})
+	}
+}
+
+// A nested emission during Init (from AppendKey while the engine encodes the
+// second initial state) is refused the same way. The first initial state
+// stays counted; the interrupted second one is not examined (I1).
+func TestRegression_NestedEmitDuringInit(t *testing.T) {
+	var cur func(models.Cell) bool
+	var rets, nested []bool
+	two := models.Grid2{Inits: []models.Cell{{}, {X: 1}}}
+	m := hooked[models.Cell, string]{Model: two,
+		init: func(emit func(models.Cell) bool) {
+			cur = emit
+			two.Init(func(c models.Cell) bool {
+				ok := emit(c)
+				rets = append(rets, ok)
+				return ok
+			})
+			cur = nil
+		},
+		key: func(buf []byte, s models.Cell) []byte {
+			if cur != nil && s == (models.Cell{X: 1}) && len(nested) == 0 {
+				nested = append(nested, cur(models.Cell{Y: 2}))
+			}
+			return models.Origin.AppendKey(buf, s)
+		}}
+	res := run(t, context.Background(), m, cellCfg{})
+	if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+		t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+	}
+	if !reflect.DeepEqual(nested, []bool{false}) || !reflect.DeepEqual(rets, []bool{true, false}) {
+		t.Errorf("nested emit returned %v, Init's emit returned %v; want [false], [true false]", nested, rets)
+	}
+	checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 1, MaxDepth: 0, FrontierPeak: 1})
+}
+
+// After a nested emission is detected, further emissions, nested or not,
+// are refused and counted nowhere, and the error stays ErrCallbackContract.
+func TestRegression_EmitAfterNestedEmit(t *testing.T) {
+	var cur func(string, models.Cell) bool
+	var rets, nested []bool
+	m := hooked[models.Cell, string]{Model: models.Origin,
+		next: func(s models.Cell, emit func(string, models.Cell) bool) {
+			cur = emit
+			rets = append(rets, emit("IncX", models.Cell{X: s.X + 1, Y: s.Y})) // ignores false
+			rets = append(rets, emit("IncY", models.Cell{X: s.X, Y: s.Y + 1}))
+			cur = nil
+		},
+		key: func(buf []byte, s models.Cell) []byte {
+			if cur != nil && s == (models.Cell{X: 1}) && len(nested) == 0 {
+				nested = append(nested, cur("nested", models.Cell{Y: 2}), cur("again", models.Cell{X: 2}))
+			}
+			return models.Origin.AppendKey(buf, s)
+		}}
+	notY1 := []check.Invariant[models.Cell]{{Name: "NotY1", Holds: func(c models.Cell) bool { return c != models.Cell{Y: 1} }}}
+	res := run(t, context.Background(), m, cellCfg{Invariants: notY1})
+	if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) {
+		t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+	}
+	if !reflect.DeepEqual(nested, []bool{false, false}) || !reflect.DeepEqual(rets, []bool{false, false}) {
+		t.Errorf("nested emits returned %v, Next's emits returned %v; want all false", nested, rets)
+	}
+	checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 1, Expanded: 1,
+		MaxDepth: 0, FrontierPeak: 1})
+}
+
+// Emitting through wrappers, and calling AppendKey from the model's own
+// Next, are ordinary sequential emissions: the results are identical to the
+// plain model's, with and without a violation and its replayed trace.
+func TestSequentialEmitsStayValid(t *testing.T) {
+	m := hooked[models.Cell, string]{Model: models.Origin, next: func(s models.Cell, emit func(string, models.Cell) bool) {
+		_ = models.Origin.AppendKey(nil, s)
+		models.Origin.Next(s, func(a string, c models.Cell) bool { return emit(a, c) })
+	}}
+	sum := []check.Invariant[models.Cell]{{Name: "Sum", Holds: models.Sum}}
+	for _, cfg := range []cellCfg{{}, {Invariants: sum}, {MaxDepth: check.Max(2)}, {DetectMutation: true}} {
+		got, want := run(t, context.Background(), m, cfg), run(t, context.Background(), models.Origin, cfg)
+		got.Stats.WallTime, want.Stats.WallTime = 0, 0
+		if !reflect.DeepEqual(got, want) {
+			t.Errorf("%+v:\n got %+v\nwant %+v", cfg, got, want)
+		}
+	}
+}
+
+// A model panic after a detected contract violation does not replace it:
+// the result stays ErrCallbackContract (D-001 amendment), and the counters
+// are those at the panic.
+func TestRegression_PanicAfterCallbackMisuse(t *testing.T) {
+	type hooks struct {
+		next func(saved func(string, models.Cell) bool, s models.Cell, emit func(string, models.Cell) bool)
+		key  func(saved func(string, models.Cell) bool, s models.Cell)
+		inv  func(saved func(string, models.Cell) bool, s models.Cell)
+	}
+	misuse := func(saved func(string, models.Cell) bool) {
+		saved("stale", models.Cell{X: 2, Y: 2})
+		panic("after misuse")
+	}
+	second := false // in the second expansion, of (1,0)
+	for _, c := range []struct {
+		name string
+		h    hooks
+		cfg  cellCfg
+		want check.Stats
+	}{
+		{"invariant", hooks{inv: func(saved func(string, models.Cell) bool, s models.Cell) {
+			if s == (models.Cell{X: 2}) {
+				misuse(saved)
+			}
+		}}, cellCfg{}, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 4, Expanded: 2, Transitions: 3, MaxDepth: 2, FrontierPeak: 2}},
+		{"AppendKey during an emission", hooks{key: func(saved func(string, models.Cell) bool, s models.Cell) {
+			if second && s == (models.Cell{X: 2}) {
+				misuse(saved)
+			}
+		}}, cellCfg{}, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 3, Expanded: 2, Transitions: 2, MaxDepth: 1, FrontierPeak: 2}},
+		{"Next", hooks{next: func(saved func(string, models.Cell) bool, s models.Cell, _ func(string, models.Cell) bool) {
+			if s == (models.Cell{X: 1}) {
+				misuse(saved)
+			}
+		}}, cellCfg{}, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 3, Expanded: 2, Transitions: 2, MaxDepth: 1, FrontierPeak: 2}},
+		{"AppendKey during DetectMutation", hooks{key: func(saved func(string, models.Cell) bool, s models.Cell) {
+			if saved != nil && !second && s == (models.Cell{X: 1}) {
+				misuse(saved)
+			}
+		}}, cellCfg{DetectMutation: true}, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 3, Expanded: 1, Transitions: 2, MaxDepth: 1, FrontierPeak: 2}},
+	} {
+		t.Run(c.name, func(t *testing.T) {
+			var saved func(string, models.Cell) bool
+			second = false
+			m := hooked[models.Cell, string]{Model: models.Origin,
+				next: func(s models.Cell, emit func(string, models.Cell) bool) {
+					if c.h.next != nil {
+						c.h.next(saved, s, emit)
+					}
+					second = s == (models.Cell{X: 1})
+					models.Origin.Next(s, emit)
+					second = false
+					if s == (models.Cell{}) {
+						saved = emit
+					}
+				},
+				key: func(buf []byte, s models.Cell) []byte {
+					if c.h.key != nil {
+						c.h.key(saved, s)
+					}
+					return models.Origin.AppendKey(buf, s)
+				}}
+			cfg := c.cfg
+			if c.h.inv != nil {
+				cfg.Invariants = []check.Invariant[models.Cell]{{Name: "Misuses", Holds: func(s models.Cell) bool {
+					c.h.inv(saved, s)
+					return true
+				}}}
+			}
+			res := run(t, context.Background(), m, cfg)
+			var pe *check.PanicError
+			if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) || errors.As(res.Err, &pe) {
+				t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+			}
+			checkStats(t, res.Stats, c.want)
+		})
+	}
+}
+
+// A nested emission followed by a panic in the same AppendKey call is
+// reported as the nested emission, not the panic.
+func TestRegression_PanicAfterNestedEmit(t *testing.T) {
+	var cur func(string, models.Cell) bool
+	nested := true
+	m := hooked[models.Cell, string]{Model: models.Origin,
+		next: func(s models.Cell, emit func(string, models.Cell) bool) {
+			cur = emit
+			models.Origin.Next(s, emit)
+			cur = nil
+		},
+		key: func(buf []byte, s models.Cell) []byte {
+			if cur != nil && s == (models.Cell{X: 1}) {
+				nested = cur("nested", models.Cell{Y: 2})
+				panic("after nested emit")
+			}
+			return models.Origin.AppendKey(buf, s)
+		}}
+	res := run(t, context.Background(), m, cellCfg{})
+	var pe *check.PanicError
+	if res.Status != check.ModelError || !errors.Is(res.Err, check.ErrCallbackContract) || errors.As(res.Err, &pe) {
+		t.Errorf("got %v %v, want ModelError %v", res.Status, res.Err, check.ErrCallbackContract)
+	}
+	if nested {
+		t.Error("nested emit returned true")
+	}
+	checkStats(t, res.Stats, check.Stats{InitEmissions: 1, InitAdmitted: 1, Admitted: 1, Expanded: 1,
+		MaxDepth: 0, FrontierPeak: 1})
 }
 
 func TestModelPanicsAreModelErrors(t *testing.T) {
