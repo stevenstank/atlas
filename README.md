@@ -5,12 +5,14 @@ explores every reachable state of a bounded, user-defined model, checks safety
 properties, and produces reproducible counterexample traces when a property is
 violated.
 
-> **Status: Phases 1 and 2 complete; Phase 3 not started.** Phase 0 decisions are accepted
-> ([docs/DECISIONS.md](docs/DECISIONS.md)). The core BFS engine (`core`,
-> `check`) is implemented and tested against the conformance tables in
-> [docs/CONFORMANCE.md](docs/CONFORMANCE.md), an independent reference
-> explorer, and 1,000 random graphs. It is not yet benchmarked or released,
-> and its API may still change.
+> **Status: Phases 1–3 and 5 complete; Phase 4 not started.**
+> Phase 0 decisions are accepted ([docs/DECISIONS.md](docs/DECISIONS.md)).
+> The core BFS engine (`core`, `check`) is implemented and tested against the
+> conformance tables in [docs/CONFORMANCE.md](docs/CONFORMANCE.md), an
+> independent reference explorer, and 1,000 random graphs, and has a
+> Phase 3 performance baseline. The `optimize` package solves assignment
+> problems by exhaustive search or branch-and-bound. Nothing is released yet,
+> and the API may still change.
 
 ## Why
 
@@ -27,7 +29,7 @@ See [docs/VISION.md](docs/VISION.md).
    search, check invariants on every state, and report the shortest
    counterexample, or a clear statement that the run was exhaustive, bounded,
    or incomplete.
-2. **Constrained optimization** (planned, Phase 5). Search a finite
+2. **Constrained optimization** (Phase 5, `optimize`). Search a finite
    configuration space for a feasible configuration that minimizes or
    maximizes an objective. Report whether the result is a *proven* optimum or
    only the best one found. See [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md).
@@ -46,8 +48,9 @@ See [docs/VISION.md](docs/VISION.md).
   same verdict and trace. Every counterexample replays through the model.
 - **Evidence-based performance.** Measure first, then optimize. Every
   performance claim will be backed by the reproducible benchmark procedure in
-  [docs/BENCHMARKS.md](docs/BENCHMARKS.md). **There are no benchmark results
-  yet**, and Atlas makes no claims of being faster than any other tool.
+  [docs/BENCHMARKS.md](docs/BENCHMARKS.md). Baseline reports are in
+  [docs/benchmarks/](docs/benchmarks/); they describe Atlas's own costs, and
+  Atlas makes no claims of being faster than any other tool.
 - **Standard library first.** No dependency without a measured justification.
 
 ## What Atlas checks, and what it doesn't

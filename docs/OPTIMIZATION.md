@@ -1,6 +1,6 @@
 # Constrained optimization (Application B)
 
-> Status: **Phase 5 in progress.** Exhaustive search over assignment problems
+> Status: **Phase 5 complete (2026-10-21).** Exhaustive search over assignment problems
 > (§2 shape (a), §4) is implemented in `optimize`, with the API recorded in
 > [DECISIONS.md](DECISIONS.md) D-015 and the §8 example as a conformance
 > test. Branch-and-bound with `Prune` and `Bound` (§5) is implemented as

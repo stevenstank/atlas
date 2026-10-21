@@ -1,9 +1,9 @@
 # Roadmap
 
-> Status: plan, not a promise. Current phase: **Phase 5 (in progress,
-> authorized 2026-10-21)**; Phase 4 is not started. Phase 0 decisions
-> accepted 2026-10-04; Phase 1 and Phase 2 closed 2026-10-05; Phase 3 closed
-> 2026-10-20.
+> Status: plan, not a promise. Current phase: **Phase 6, release packaging
+> (examples, authorized 2026-10-21)**; Phase 4 is not started. Phase 0
+> decisions accepted 2026-10-04; Phase 1 and Phase 2 closed 2026-10-05;
+> Phase 3 closed 2026-10-20; Phase 5 closed 2026-10-21.
 
 ## Timeline estimate
 
@@ -272,12 +272,16 @@ back at least one model as a validation workload.
 
 ## Phase 5: Optimization application
 
-**Status: in progress (authorized 2026-10-21).** Done: exhaustive search over
-assignment problems in `optimize` (D-015), with the OPTIMIZATION.md §8
-knapsack as a conformance test and a brute-force cross-check on random
-instances. Branch-and-bound (D-016, accepted 2026-10-21) returns exhaustive
-search's assignment on every test instance; its correctness review is
-complete. Open: the interrupted-run bound (OPTIMIZATION.md §5) and shape (b).
+**Status: complete (2026-10-21).** Evidence for each exit criterion, all in
+`optimize` tests: hand-solved instances, including the OPTIMIZATION.md §8
+knapsack; exhaustive search against a brute-force reference on 500 random
+instances, complete and limited; `BestFound`/`NoneFound`, never `Optimal`,
+for every `StopReason`; branch-and-bound (D-016) returning exhaustive
+search's assignment on every test instance; and `Config.VerifyPruning` as the
+bound-checking debug mode. **Deferred**, not required by the exit criteria:
+the interrupted-run bound (OPTIMIZATION.md §5, optional in §3); shape (b),
+which needs its own decision on where the emit contract is enforced outside
+`check` (D-009); and best-first search (§10, measure first).
 
 **Goal.** Exhaustive optimization over small finite configuration spaces
 ([OPTIMIZATION.md](OPTIMIZATION.md)).
@@ -309,6 +313,9 @@ documentation of the obligation.
 Each item needs its own decision record, explicit soundness assumptions, and
 a validation plan before any code is written. None of them is required for
 the first release.
+
+**Status: release packaging started (2026-10-21)** with runnable examples
+(D-017). No other item is started.
 
 | Item                     | Soundness assumption to document                    | Validation |
 |--------------------------|-----------------------------------------------------|------------|

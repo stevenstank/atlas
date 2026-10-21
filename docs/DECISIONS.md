@@ -936,3 +936,28 @@ D-015 left both callbacks out.
 optional report in §3), best-first search, and checking `Prune`/`Bound`
 without `VerifyPruning`: an invalid callback then can make `Optimal` or
 `Infeasible` wrong, which is the user's obligation (§5).
+
+## D-017 Runnable examples as the first release-packaging item — Proposed (2026-10-21)
+
+**Context.** ROADMAP Phase 6 lists release packaging ("examples compile").
+VISION's success criteria include a newcomer writing a small model and
+reading its counterexample without help. The repository had no examples.
+
+**Proposal (implemented).** Go `Example` functions, which `go test` runs and
+whose `// Output:` it compares, so an example that drifts from the engine
+fails the test suite:
+- `check`: `ExampleRun` (a two-process lost-update counter; the shortest
+  counterexample and how `Result.String` reads) and `ExampleRun_exhausted`
+  (the atomic fix, verified).
+- `optimize`: `ExampleSolve` (the OPTIMIZATION.md §8 knapsack, with a limited
+  run reported as `BestFound`) and `ExampleSolve_branchAndBound` (`Prune`
+  and `Bound` returning exhaustive search's assignment on a tied instance).
+
+**Soundness assumptions.** None: examples are tests and add no API. Expected
+outputs were derived by hand where stated (§8 table; the counter's state
+counts; the knapsack optimum and tie); branch-and-bound's evaluation count is
+the engine's own, deterministic.
+
+**Validation.** `go test ./...`.
+
+**Not included.** A versioned API, a CLI, or other release-packaging work.
