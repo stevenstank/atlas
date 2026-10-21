@@ -898,3 +898,41 @@ callback that writes to it cannot affect the search.
 
 **Not included.** Shape (b), `Prune`, `Bound`, branch-and-bound, a
 `Claim`/`String` for results (D-013's counterpart).
+
+## D-016 Branch-and-bound for assignment problems — Proposed (2026-10-21)
+
+**Context.** OPTIMIZATION.md §5 specifies branch-and-bound over the
+assignment tree with user-supplied `Prune` and `Bound`, and a debug check.
+D-015 left both callbacks out.
+
+**Proposal (implemented, additive to D-015).**
+- `Problem` gains optional `Prune(partial []V) bool` and
+  `Bound(partial []V) int64`. `partial` holds `Vars[0..d-1]`, 0 <= d < n
+  (the internal nodes; never a full assignment), refilled from engine
+  positions like every callback.
+- `Prune` true means no completion is feasible. `Bound` is optimistic in the
+  direction of `Sense` (<= every feasible completion for `Minimize`, >= for
+  `Maximize`); it is called only when an incumbent exists, after `Prune` says
+  false. A subtree is cut when the bound is not strictly better than the
+  incumbent (§5's `≥` for minimization).
+- One depth-first search in the existing order; without the callbacks it is
+  D-015's exhaustive search. With valid callbacks the result, including the
+  tied assignment returned, equals exhaustive search: every assignment before
+  the first optimum is strictly worse, so no ancestor of it is cut, and after
+  it nothing strictly better exists.
+- `Stats` gains `Nodes` (partials passed to a callback), `Pruned`,
+  `Bounded`, and `Verified`. The interruption schedule counts nodes and
+  verification evaluations as steps; `MaxEvaluations` still counts
+  evaluations only, checked just before one, so a limit that cuts make
+  unreachable changes nothing. Stopped runs are `BestFound`/`NoneFound`.
+- `Config.VerifyPruning` enumerates every cut subtree and reports
+  `ModelError` wrapping `ErrInvalidPrune` or `ErrInvalidBound` on a broken
+  claim. It checks every cut actually made, deterministically, rather than
+  §5's sample; cost is about that of exhaustive search. It does not check
+  bounds that caused no cut, or determinism. A panic in `Prune` or `Bound`
+  is `ModelError` with a `*PanicError`.
+
+**Not included.** The proven bound and gap for interrupted runs (§5, an
+optional report in §3), best-first search, and checking `Prune`/`Bound`
+without `VerifyPruning`: an invalid callback then can make `Optimal` or
+`Infeasible` wrong, which is the user's obligation (§5).

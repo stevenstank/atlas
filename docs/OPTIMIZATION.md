@@ -3,7 +3,8 @@
 > Status: **Phase 5 in progress.** Exhaustive search over assignment problems
 > (§2 shape (a), §4) is implemented in `optimize`, with the API recorded in
 > [DECISIONS.md](DECISIONS.md) D-015 and the §8 example as a conformance
-> test. Shape (b), `Prune`, `Bound`, and branch-and-bound (§5) are not.
+> test. Branch-and-bound with `Prune` and `Bound` (§5) is implemented as
+> proposed in D-016, without the interrupted-run bound. Shape (b) is not.
 
 ## 1. Purpose and scope
 
@@ -94,8 +95,9 @@ must never exceed the objective of any feasible completion. `Prune` must only
 reject partials that have no feasible completion. Atlas cannot prove either
 property in general. Mitigations:
 
-- a debug mode that, on sampled nodes of small instances, enumerates the
-  completions and checks the bound, reporting `ModelError` on any violation;
+- a debug mode that, on small instances, enumerates the completions and
+  checks the bound, reporting `ModelError` on any violation (implemented as
+  `Config.VerifyPruning`, which checks every cut rather than a sample; D-016);
 - tests requiring branch-and-bound to return the **same assignment** as
   exhaustive search on every test instance.
 
@@ -105,7 +107,7 @@ return. That optimum is never pruned, since its subtree bound is ≤ opt, which
 is less than any incumbent found before it.
 
 **Interrupted runs.** If stopped early, the result is `BestFound`. Atlas
-also tracks the minimum `Bound` over the unexplored open subtrees. That gives
+will also track (not yet implemented, D-016) the minimum `Bound` over the unexplored open subtrees. That gives
 a proven lower bound `L`, and the report states "optimum lies in
 [L, incumbent]". This is the only optimality information available from an
 incomplete run.

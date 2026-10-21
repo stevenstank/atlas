@@ -18,7 +18,8 @@ const (
 	// NoneFound: the search stopped early before finding a feasible
 	// assignment. Feasibility is unknown.
 	NoneFound
-	// ModelError: a callback panicked. See Result.Err.
+	// ModelError: a callback panicked, or Config.VerifyPruning found a cut
+	// that broke its contract. See Result.Err.
 	ModelError
 )
 
@@ -66,6 +67,10 @@ func (r StopReason) String() string {
 type Stats struct {
 	Evaluations int64 // assignments whose feasibility was decided
 	Feasible    int64 // of those, the feasible ones (each had Objective called)
+	Nodes       int64 // partial assignments passed to Prune or Bound
+	Pruned      int64 // of those, subtrees cut by Prune
+	Bounded     int64 // of those, subtrees cut by Bound
+	Verified    int64 // assignments evaluated by Config.VerifyPruning
 }
 
 // PanicError is a panic recovered from a callback.

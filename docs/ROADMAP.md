@@ -275,7 +275,9 @@ back at least one model as a validation workload.
 **Status: in progress (authorized 2026-10-21).** Done: exhaustive search over
 assignment problems in `optimize` (D-015), with the OPTIMIZATION.md §8
 knapsack as a conformance test and a brute-force cross-check on random
-instances. Open: branch-and-bound and the remaining exit criteria below.
+instances. Branch-and-bound (D-016, proposed) returns exhaustive search's
+assignment on every test instance. Open: acceptance of D-016, the
+interrupted-run bound (OPTIMIZATION.md §5), and shape (b).
 
 **Goal.** Exhaustive optimization over small finite configuration spaces
 ([OPTIMIZATION.md](OPTIMIZATION.md)).
