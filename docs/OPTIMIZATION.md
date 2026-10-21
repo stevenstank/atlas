@@ -1,8 +1,9 @@
 # Constrained optimization (Application B)
 
-> Status: **planned for Phase 5**. Nothing here is implemented. The design
-> depends on the core engine being correct and stable first
-> ([ROADMAP.md](ROADMAP.md)).
+> Status: **Phase 5 in progress.** Exhaustive search over assignment problems
+> (§2 shape (a), §4) is implemented in `optimize`, with the API recorded in
+> [DECISIONS.md](DECISIONS.md) D-015 and the §8 example as a conformance
+> test. Shape (b), `Prune`, `Bound`, and branch-and-bound (§5) are not.
 
 ## 1. Purpose and scope
 
@@ -114,12 +115,18 @@ incomplete run.
 See [ARCHITECTURE.md](ARCHITECTURE.md) §4 and [DECISIONS.md](DECISIONS.md)
 D-009.
 
-| Reused from `core`                         | Owned by `optimize`                    |
+| Reused from `core` (shape b, not yet exercised) | Owned by `optimize`               |
 |--------------------------------------------|----------------------------------------|
 | Generator contract (`Init`/`Next`, `AppendKey`) | Objective, constraints, `Bound`, `Prune` |
 | Visited set and IDs (shape b only)         | Incumbent tracking and tie-breaking    |
-| Limits, cancellation, statistics           | DFS / best-first loop                  |
-| Path replay, which turns the solution into its sequence of moves | `Optimal` / `BestFound` / … result type |
+| Path replay, which turns the solution into its sequence of moves | DFS / best-first loop |
+|                                            | Limits, cancellation, statistics       |
+|                                            | `Optimal` / `BestFound` / … result type |
+
+Limits, cancellation, and statistics are not in `core`; the model checker's
+live in `check`. `optimize` deliberately has its own (D-015) rather than
+importing `check`. Moving them into a shared `core` is an alternative that
+has not been exercised.
 
 `optimize` does **not** reuse `check`'s BFS loop, invariants, or `Status`
 values. If `optimize` needs a stack frontier, it lives in `optimize`, unless
@@ -168,11 +175,12 @@ Following [TESTING.md](TESTING.md):
 - a deliberately invalid `Bound` must be caught by the debug check on small
   instances.
 
-## 10. Open questions (resolve before Phase 5)
+## 10. Open questions
+
+Resolved: Phase 5 starts with assignment problems, shape (a) (D-015).
+Shape (b) is not yet implemented.
 
 - Multi-objective problems (Pareto fronts): out of scope, or a later
   extension?
-- Should shape (b) be supported in Phase 5, or should it start with shape (a)
-  only? The tentative answer is (a) first.
 - Best-first search (a priority queue on `Bound`) versus DFS. Best-first gives
   better bounds sooner but uses more memory. Measure before deciding.

@@ -1,8 +1,9 @@
 # Roadmap
 
-> Status: plan, not a promise. Current phase: **Phase 4 (not started; awaits
-> owner authorization)**. Phase 0 decisions accepted 2026-10-04; Phase 1 and
-> Phase 2 closed 2026-10-05; Phase 3 closed 2026-10-20.
+> Status: plan, not a promise. Current phase: **Phase 5 (in progress,
+> authorized 2026-10-21)**; Phase 4 is not started. Phase 0 decisions
+> accepted 2026-10-04; Phase 1 and Phase 2 closed 2026-10-05; Phase 3 closed
+> 2026-10-20.
 
 ## Timeline estimate
 
@@ -270,6 +271,11 @@ back at least one model as a validation workload.
 ---
 
 ## Phase 5: Optimization application
+
+**Status: in progress (authorized 2026-10-21).** Done: exhaustive search over
+assignment problems in `optimize` (D-015), with the OPTIMIZATION.md §8
+knapsack as a conformance test and a brute-force cross-check on random
+instances. Open: branch-and-bound and the remaining exit criteria below.
 
 **Goal.** Exhaustive optimization over small finite configuration spaces
 ([OPTIMIZATION.md](OPTIMIZATION.md)).

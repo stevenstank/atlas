@@ -12,7 +12,8 @@ On 2026-10-04 the owner explicitly accepted D-001 (option 3b), D-002, D-003
 Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). On 2026-10-05 the owner
 accepted D-010 and D-013 at the Phase 2 review, and on 2026-10-06
 D-014 for benchmark B7 and D-007 for the Phase 3 baseline (D-007 amended on
-2026-10-14). The other records keep the
+2026-10-14). On 2026-10-21 the owner accepted D-015 and the dependency
+direction of D-009. The other records keep the
 status shown in their headings.
 
 ## Phase 0 decisions (accepted 2026-10-04)
@@ -337,18 +338,26 @@ chosen must state its guarantees in SEMANTICS.md.
 lengths must match the sequential run if the guarantee is claimed. Use
 `-race`.
 
-## D-009 How optimization shares the core — Proposed
+## D-009 How optimization shares the core — Accepted (2026-10-21): dependency direction
 
-**Recommendation.** `optimize` reuses `core` (generator contract, keys, visited
-set, limits, stats, path replay) and implements its own search loop and result
-type. It does **not** reuse `check`'s BFS loop or `Status` values
+**Accepted.** `optimize` does not depend on `check`, and neither `core` nor
+`check` depends on `optimize`. `optimize` implements its own search loop and
+result type and does **not** reuse `check`'s BFS loop or `Status` values
 (OPTIMIZATION.md §6).
+
+**Recommendation, not yet exercised.** `optimize` may reuse `core`'s
+generator contract, keys, visited set, and path replay when shape (b) needs
+them. Limits, cancellation, and statistics are not in `core`: they live in
+`check`, and `optimize` deliberately has its own (`MaxEvaluations`, the
+`CheckInterval` schedule, `Stats`, `PanicError`). Moving such mechanisms into
+a shared `core` is an alternative that has not been tried.
 
 **Trade-offs.** Some loop logic is duplicated, in exchange for no
 optimization-specific branches in the model checker.
 
-**Validation.** Before Phase 5 begins, review whether `core` has gained any
-import of, or concept from, `optimize`.
+**Validation.** On 2026-10-21, `go list -deps` showed that `optimize`
+imports no Atlas package and that `core` and `check` do not import
+`optimize`.
 
 ## D-010 Deadlock (terminal state) default — Accepted (2026-10-05)
 
@@ -848,3 +857,44 @@ unchanged (`models/taskqueue_test.go`).
 **Alternatives.** A copy of the queue inside `internal/bench`, which would
 leave B7 on a different model from Phase 2's; or B7 at 4 tasks, which does
 not give a large space.
+
+## D-015 `optimize` API for exhaustive assignment search — Accepted (2026-10-21)
+
+**Context.** Phase 5 starts with exhaustive search over assignment problems
+(OPTIMIZATION.md §2 shape (a), §4), which needs a public API. OPTIMIZATION.md
+§2 sketches one as "illustrative only".
+
+**Implemented (owner authorized Phase 5 work, 2026-10-21).** Package
+`optimize`: `Solve(ctx, Problem[V], Config) (Result[V], error)`.
+- `Problem[V]` holds `Vars []Var[V]` (a name and an ordered, non-empty
+  domain each), a required `Sense` (`Minimize` or `Maximize`; the zero value
+  is invalid), `Feasible func([]V) bool` (nil: all feasible), and
+  `Objective func([]V) int64`, called only on feasible assignments.
+- Enumeration is lexicographic in domain positions, `Vars[0]` slowest. A
+  strictly better value replaces the incumbent, so ties go to the first
+  optimum enumerated (OPTIMIZATION.md §2). Maximization compares directly
+  instead of negating, which would overflow.
+- Statuses as in OPTIMIZATION.md §3, minus the bound and gap of §5 (no
+  `Bound` yet). `Config.MaxEvaluations` (0: none) and the context stop a
+  search as `BestFound` or `NoneFound`, never `Optimal`/`Infeasible`; a limit
+  that is never reached changes nothing. The context is checked before
+  evaluations 1, 1+K, …, as in `check`. A callback panic is `ModelError`
+  with a `*PanicError`; an invalid problem or configuration is an
+  `ErrInvalidConfig` error, returned before any callback runs.
+- `optimize` imports neither `check` nor `core`: shape (a) needs no visited
+  set, so D-009's reuse of `core` is not yet exercised. Its limits,
+  cancellation schedule, statistics, and `PanicError` are its own, not
+  shared with `check`.
+- Exhaustive search evaluates each assignment once, so it does not detect a
+  nondeterministic `Feasible` or `Objective`; the result then reflects the
+  values returned on that single call. (OPTIMIZATION.md §3 lists
+  nondeterminism under `ModelError`; this search does not report it.)
+
+**Choices made here, not in earlier records.** A zero `Sense` and an empty
+domain are caller errors (an empty domain would otherwise "prove"
+`Infeasible` vacuously, as an empty `Init` would prove `Exhausted`). Each
+callback gets the assignment refilled from the engine's positions, so a
+callback that writes to it cannot affect the search.
+
+**Not included.** Shape (b), `Prune`, `Bound`, branch-and-bound, a
+`Claim`/`String` for results (D-013's counterpart).

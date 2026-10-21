@@ -258,7 +258,7 @@ help the GC, but it is not what enforces the limit.
 | Model / generator contract     |  ✓   |       |          |
 | Key encoding, visited set, IDs |  ✓   |       |  reuse   |
 | Frontier data structures       |  ✓   | FIFO  | stack/heap |
-| Limits, cancellation, stats    |  ✓   |       |          |
+| Limits, cancellation, stats    |      |  ✓    |  ✓ (own, D-015) |
 | Path replay from (parent,edge) |  ✓   | traces| solution paths |
 | Invariants, Violation status   |      |  ✓    |          |
 | Objective, bounds, incumbent   |      |       |  ✓       |
