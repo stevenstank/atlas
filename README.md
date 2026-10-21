@@ -62,16 +62,18 @@ satisfies the given invariants. It does not prove anything about larger
 sizes, liveness properties, or how faithful the model is to the real system.
 See [docs/SEMANTICS.md §9](docs/SEMANTICS.md#9-what-an-exhaustive-run-proves-and-what-it-does-not).
 
-## Architecture (proposed)
+## Architecture
 
 ```
-check (model checking)      optimize (Phase 5)
-          \                    /
-           core: model contract · canonical keys · visited set
-                 FIFO frontier · limits & cancellation · stats · trace replay
+check (model checking)                 optimize (assignment problems)
+  BFS · invariants · limits ·            exhaustive search · branch-and-bound ·
+  cancellation · stats · traces          limits · cancellation · stats
+          \
+           core: model contract · canonical keys · visited set · FIFO queue
 ```
 
-A model supplies its initial states, a successor function that emits
+`optimize` does not use `check` or `core` yet: assignment problems need no
+model or visited set (D-009, D-015). A model supplies its initial states, a successor function that emits
 `(action, next state)` pairs, and a canonical key for each state. The engine
 deduplicates states by key, records a parent link for each new state, and
 rebuilds counterexamples by replaying the model. Details and alternatives:
@@ -99,19 +101,21 @@ type Model[S any, A any] interface {
 | Depth/state/time/memory limits, cancellation | Done    | 1 |
 | Search statistics                            | Done    | 1 |
 | Reference protocol models, readable traces   | Done    | 2 |
-| Benchmark harness and baseline               | Planned | 3 |
-| Measured performance engineering             | Planned | 4 |
-| Exhaustive and branch-and-bound optimization | Planned | 5 |
+| Benchmark harness and baseline               | Done    | 3 |
+| Measured performance engineering             | Not started | 4 |
+| Exhaustive and branch-and-bound optimization over assignment problems | Done | 5 |
+| Optimization over reachable states (shape (b)) | Deferred | — |
+| Runnable examples                            | Done    | 6 |
 | Symmetry / partial-order reduction, parallel BFS | Research (optional) | 6 |
 | Liveness, temporal logic                     | Not planned; future research question | — |
 
 ## Roadmap
 
 Phase 0: specification → 1: correctness-first engine → 2: protocol
-models → 3: performance baseline (next, not started) → 4: performance engineering → 5: optimizer →
-6: optional research. The plan is about four months of core work, plus up to
-two months of optional work. Each phase has explicit exit criteria. See
-[docs/ROADMAP.md](docs/ROADMAP.md).
+models → 3: performance baseline → 4: performance engineering (not started)
+→ 5: optimizer → 6: optional research and release hardening (release
+packaging in progress). Phases 0–3 and 5 are complete. Each phase has
+explicit exit criteria. See [docs/ROADMAP.md](docs/ROADMAP.md).
 
 ## Documentation
 
@@ -120,7 +124,7 @@ two months of optional work. Each phase has explicit exit criteria. See
 | [docs/VISION.md](docs/VISION.md) | Goals, audience, non-goals, success criteria |
 | [docs/SEMANTICS.md](docs/SEMANTICS.md) | What a run means and what it proves |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Components, data flow, alternatives |
-| [docs/DECISIONS.md](docs/DECISIONS.md) | Decision records (open and proposed) |
+| [docs/DECISIONS.md](docs/DECISIONS.md) | Decision records (accepted, proposed, and open) |
 | [docs/ROADMAP.md](docs/ROADMAP.md) | Phases, dependencies, exit criteria |
 | [docs/TESTING.md](docs/TESTING.md) | Testing strategy and oracles |
 | [docs/CONFORMANCE.md](docs/CONFORMANCE.md) | Hand-worked expected results for conformance tests |
@@ -135,6 +139,27 @@ Read [CONTRIBUTING.md](CONTRIBUTING.md). In short: correctness first, tests
 that check meaning, no unmeasured performance claims, and **no commits or
 pushes on the owner's behalf**, by people or by automated tools.
 
-## Installation
+## Installation and first steps
 
-None yet. There is nothing to install until Phase 1 is complete.
+Atlas has no tagged release, and its API may still change. It needs Go 1.26
+or later and has no dependencies outside the standard library. To use the
+current development version:
+
+```
+go get github.com/stevenstank/atlas@main
+```
+
+Start with the runnable examples, which `go test` checks against their
+printed output:
+
+- `ExampleRun` and `ExampleRun_exhausted` in
+  [check/example_test.go](check/example_test.go): a small model with a lost
+  update, its shortest counterexample, and the fixed model verified.
+- `ExampleSolve` and `ExampleSolve_branchAndBound` in
+  [optimize/example_test.go](optimize/example_test.go): the knapsack from
+  [docs/OPTIMIZATION.md](docs/OPTIMIZATION.md) §8, solved exhaustively and by
+  branch-and-bound.
+
+`go doc github.com/stevenstank/atlas/check` and
+`go doc github.com/stevenstank/atlas/optimize` show the API, and
+[models/](models/) holds larger reference models.

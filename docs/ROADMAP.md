@@ -315,7 +315,10 @@ a validation plan before any code is written. None of them is required for
 the first release.
 
 **Status: release packaging started (2026-10-21)** with runnable examples
-(D-017). No other item is started.
+(D-017) and a review of the user-facing docs (README status, architecture,
+capabilities, installation; stale status banners in ARCHITECTURE, SEMANTICS,
+VISION, and RESEARCH). Open in that item: a versioned API. No other item is
+started.
 
 | Item                     | Soundness assumption to document                    | Validation |
 |--------------------------|-----------------------------------------------------|------------|

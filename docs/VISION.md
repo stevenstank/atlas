@@ -1,6 +1,7 @@
 # Vision
 
-> Status: specification. Nothing in this document is implemented yet.
+> Status: goals and success criteria. Which phases are implemented is tracked
+> in [ROADMAP.md](ROADMAP.md).
 
 ## What Atlas is
 

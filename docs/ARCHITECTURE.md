@@ -1,9 +1,10 @@
 # Architecture
 
-> Status: **proposed**. No code exists yet. All Go signatures below are
-> illustrative and become final only when the matching record in
-> [DECISIONS.md](DECISIONS.md) is resolved. Performance-related choices here
-> are starting points to be measured in Phase 3, not settled facts.
+> Status: **implemented** for `core` and `check` (Phases 1–2) and for
+> `optimize` over assignment problems (Phase 5). Go signatures below are
+> illustrative: the code and the accepted records in
+> [DECISIONS.md](DECISIONS.md) are authoritative. Performance-related choices
+> are the unoptimized baseline measured in Phase 3, not tuned results.
 
 ## 1. Layers
 

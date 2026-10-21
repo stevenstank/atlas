@@ -1,6 +1,6 @@
 # Semantics
 
-> Status: specification for Phase 1. Nothing here is implemented yet. Where this
+> Status: specification, implemented by `check` (Phases 1–2). Where this
 > document and the code disagree, one of them has a bug. Resolve the
 > disagreement explicitly; do not leave it.
 

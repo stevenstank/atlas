@@ -144,7 +144,7 @@ Its lesson for Atlas is that determinism has to be designed in from the start.
 | Porcupine   | Recorded history| Linearization search| Go         | That one history is linearizable     |
 | simtest-go  | Real Go code    | Seeded sampling     | Go         | None beyond the seeds run            |
 | MadSim      | Real Rust code  | Seeded sampling     | Rust       | None beyond the seeds run            |
-| **Atlas**   | Go model        | Exhaustive BFS      | Go         | Exhaustive for the model (planned)   |
+| **Atlas**   | Go model        | Exhaustive BFS      | Go         | Exhaustive for the model             |
 
 **What could realistically set Atlas apart (assessment, unproven):**
 1. A Go-native, embedded, exact-identity explicit-state checker with a small
