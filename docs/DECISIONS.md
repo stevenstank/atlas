@@ -12,8 +12,8 @@ On 2026-10-04 the owner explicitly accepted D-001 (option 3b), D-002, D-003
 Phase 0 exit criterion ([ROADMAP.md](ROADMAP.md)). On 2026-10-05 the owner
 accepted D-010 and D-013 at the Phase 2 review, and on 2026-10-06
 D-014 for benchmark B7 and D-007 for the Phase 3 baseline (D-007 amended on
-2026-10-14). On 2026-10-21 the owner accepted D-015 and the dependency
-direction of D-009. The other records keep the
+2026-10-14). On 2026-10-21 the owner accepted D-015, the dependency
+direction of D-009, and D-016. The other records keep the
 status shown in their headings.
 
 ## Phase 0 decisions (accepted 2026-10-04)
@@ -899,7 +899,7 @@ callback that writes to it cannot affect the search.
 **Not included.** Shape (b), `Prune`, `Bound`, branch-and-bound, a
 `Claim`/`String` for results (D-013's counterpart).
 
-## D-016 Branch-and-bound for assignment problems — Proposed (2026-10-21)
+## D-016 Branch-and-bound for assignment problems — Accepted (2026-10-21)
 
 **Context.** OPTIMIZATION.md §5 specifies branch-and-bound over the
 assignment tree with user-supplied `Prune` and `Bound`, and a debug check.

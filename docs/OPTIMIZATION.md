@@ -4,7 +4,7 @@
 > (§2 shape (a), §4) is implemented in `optimize`, with the API recorded in
 > [DECISIONS.md](DECISIONS.md) D-015 and the §8 example as a conformance
 > test. Branch-and-bound with `Prune` and `Bound` (§5) is implemented as
-> proposed in D-016, without the interrupted-run bound. Shape (b) is not.
+> accepted in D-016, without the interrupted-run bound. Shape (b) is not.
 
 ## 1. Purpose and scope
 
