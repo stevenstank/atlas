@@ -141,7 +141,14 @@ pushes on the owner's behalf**, by people or by automated tools.
 
 ## Installation and first steps
 
-Atlas has no tagged release, and its API may still change. It needs Go 1.26
+Atlas has no tagged release, and its API may still change. The v0.x
+compatibility policy is [DECISIONS.md D-018](docs/DECISIONS.md): patch
+releases do not break covered API; breaking changes, including changes to
+documented verdicts, assignments, traces, or counted statistics, bump the
+minor version. `core.Store`, `core.Queue`, `core.StateID`, `core.NoParent`,
+`core.MaxStoreLen`, the `models` package, and the wording of printed output
+and error messages are not covered (error identity is). Use keyed struct
+literals: new fields may be added. It needs Go 1.26
 or later and has no dependencies outside the standard library. To use the
 current development version:
 

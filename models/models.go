@@ -1,4 +1,8 @@
 // Package models holds the small reference models from docs/CONFORMANCE.md.
+//
+// Compatibility (DECISIONS.md D-018): these are fixtures for Atlas's own
+// tests and benchmarks. The package is not covered by the v0.x policy and
+// may change in any release, including a patch release.
 package models
 
 // Jug is a water-jug state (B, S): litres in the big 5 L jug and the small

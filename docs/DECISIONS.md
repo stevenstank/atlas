@@ -14,7 +14,7 @@ accepted D-010 and D-013 at the Phase 2 review, and on 2026-10-06
 D-014 for benchmark B7 and D-007 for the Phase 3 baseline (D-007 amended on
 2026-10-14). On 2026-10-21 the owner accepted D-015, the dependency
 direction of D-009, D-016, and D-017. The other records keep the
-status shown in their headings.
+status shown in their headings. On 2026-10-22 the owner accepted D-018.
 
 ## Phase 0 decisions (accepted 2026-10-04)
 
@@ -961,3 +961,112 @@ the engine's own, deterministic.
 **Validation.** `go test ./...`.
 
 **Not included.** A versioned API, a CLI, or other release-packaging work.
+
+## D-018 Versioned API and compatibility policy for v0.x — Accepted (2026-10-22)
+
+**Context.** ROADMAP Phase 6 release packaging requires a versioned API.
+Facts this record relies on:
+- One module, `github.com/stevenstank/atlas`, `go 1.26`, no dependencies
+  (D-011). The module path assumes the GitHub location and is costly to
+  change once imported. No version has been tagged.
+- Public packages: `core`, `check`, `optimize`, `models`. `internal/...` is
+  not importable from other modules, so it is outside any policy.
+- `core.Store`, `core.Queue`, `core.StateID`, `core.NoParent`, and
+  `core.MaxStoreLen` are exported only because `check` uses them; no other
+  non-test code does. D-003 leaves the optimized visited-set layout
+  unresolved and says Phase 4 may replace it.
+- `models` holds the conformance and benchmark models. D-014 already changed
+  one of them (TaskQueue capacity) for a benchmark.
+- The `String` methods of `Status` and `StopReason`, in both `check` and
+  `optimize`, already print values they do not know (`Status(7)`). No value
+  has been added to these enumerations since their package's first commit:
+  `check.StopReason`'s `CapacityLimit` has existed since the original engine
+  commit (`b8addb6`). New values would therefore be new practice, not
+  precedent.
+- Errors are documented as sentinels to match with `errors.Is`:
+  `check.ErrInvalidConfig`, `ErrNoInitialStates`, `ErrCallbackContract`,
+  `ErrNondeterministic`, `ErrStateMutated`; `optimize.ErrInvalidConfig`,
+  `ErrInvalidPrune`, `ErrInvalidBound`. Callback panics are `*PanicError`
+  in each package, for `errors.As`.
+- `Result.String` text is pinned by tests (D-013), but nothing promises its
+  wording to users.
+- Unresolved records that could reshape public API: D-003 (optimized layout),
+  D-008 (parallelism), and D-009's reuse of `core` by shape (b).
+- Existing rules: every public API change gets a DECISIONS.md note
+  (AGENTS.md), and no phase may weaken an established guarantee (ROADMAP).
+
+**Proposal.**
+1. *Versions.* Tag `v0.1.0` (the owner tags; agents never do). Under Go's
+   module rules a v0 module promises no compatibility; Atlas promises a
+   little more: a patch release (`v0.x.y` to `v0.x.y+1`) has no breaking
+   change to covered API, and any breaking change bumps the minor version.
+2. *Covered API.* `core.Model` and the `core.Append*` key helpers;
+   everything exported from `check` and `optimize`; and the documented
+   meaning of results (SEMANTICS.md, OPTIMIZATION.md §3, D-006, D-012,
+   D-015, D-016).
+   Covered errors: the identity of every exported sentinel error and error
+   type above, and every documented `errors.Is`/`errors.As` relation (for
+   example, that `Solve`'s configuration errors wrap
+   `optimize.ErrInvalidConfig`, and that `VerifyPruning` violations wrap
+   `ErrInvalidPrune` or `ErrInvalidBound`). Removing a sentinel, or changing
+   which documented sentinel an outcome wraps, is breaking.
+3. *Not covered*, even in patch releases, and said so in their package
+   docs:
+   - `core.Store`, `core.Queue`, `core.StateID`, `core.NoParent`, and
+     `core.MaxStoreLen`: engine internals exported only for `check`, open to
+     change by Phase 4 (D-003) or D-009. They stay in `core` for now; moving
+     them under `internal/` is a v1 question.
+   - `models`: reference fixtures for tests and benchmarks.
+   - The wording of `String` output and of error messages: for people, not
+     parsers. This excludes only the text; error identity stays covered
+     (item 2).
+4. *Additions, allowed in any release.* New exported identifiers and new
+   `Status` or `StopReason` values. Callers should handle unknown
+   enumeration values. New fields in covered structs (`Config`, `Problem`,
+   `Stats`, `Result`, ...) are also allowed, but this is **not** fully
+   source-compatible in Go: a new field breaks unkeyed composite literals of
+   that struct (`optimize.Var[bool]{"A", d}`), so Atlas supports keyed
+   literals only (`optimize.Var[bool]{Name: "A", Domain: d}`) and its
+   documentation and examples use them. One specific constraint applies on
+   top of that: `check.Stats` and `optimize.Stats`, which are comparable
+   today, gain only fields that keep them comparable, so existing `==`
+   comparisons of them keep compiling. The constraint covers those two types
+   only. It does not make adding fields source-compatible for every caller
+   (unkeyed literals still break), and other covered structs carry no
+   comparability promise.
+5. *Semantics.* A change to a documented verdict, a returned assignment, a
+   trace, or a counted statistic for the same model and configuration is a
+   breaking change even when no signature changes: it needs its own decision
+   record and a minor version bump. A change that weakens a documented
+   guarantee is not made at all (ROADMAP rules); a bug fix that restores a
+   documented guarantee may ship in a patch release and is called out.
+6. *Go version.* Raising the `go` directive is a breaking change (minor
+   version) and is recorded in DECISIONS.md, as D-011 requires.
+7. *Communication.* Each breaking change keeps its DECISIONS.md record, and
+   each tag gets release notes listing breaking changes, semantic changes,
+   and fixes, with links to the records. Where practical, an identifier to
+   be removed is marked `// Deprecated:` for one minor release first; in
+   v0 this is a courtesy, not a promise.
+
+**Criteria for v1.0.0** (all required; none is met yet):
+- D-003's optimized layout and D-009's `core` reuse decided, and `core.Store`
+  and `core.Queue` either covered or moved under `internal/`;
+- D-008 resolved or explicitly deferred with no effect on public API;
+- the module path confirmed for the long term;
+- the `optimize.Result` readable-output question (D-015 "Not included")
+  decided;
+- at least one minor release with no breaking change to covered API, and use
+  of the API outside this repository's tests.
+
+**Consequences.** On acceptance, documentation only: the `core` package
+comment names the excluded identifiers; the `models` package comment says
+it is not covered; the README states the policy in a few lines and links
+here. No signature changes. `optimize/optimize_test.go` uses unkeyed
+`optimize.Var` literals; in-repository tests are not external callers, and
+the runnable examples already use keyed literals. The record promises
+nothing for v0 beyond patch-release stability, and makes no v1 promise.
+
+**Alternatives.** Moving `core.Store`/`Queue` under `internal/` before the
+first tag: cleaner, but an API change that Phase 4 or D-009 might immediately
+reshape again. No policy until v1: leaves users unable to tell a patch from a
+break. Starting at v1: not justified while D-003, D-008, and D-009 are open.

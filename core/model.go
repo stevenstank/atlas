@@ -1,5 +1,10 @@
 // Package core holds the pieces shared by Atlas applications: the model
 // contract, exact state storage, and the frontier queue.
+//
+// Compatibility (DECISIONS.md D-018): Model and the Append* key helpers are
+// covered by the v0.x policy. Store, Queue, StateID, NoParent, and
+// MaxStoreLen are engine internals exported for check; they are not
+// covered and may change in any release, including a patch release.
 package core
 
 // Model is a transition system to explore (DECISIONS.md D-001, option 3b).
