@@ -11,8 +11,8 @@ violated.
 > conformance tables in [docs/CONFORMANCE.md](docs/CONFORMANCE.md), an
 > independent reference explorer, and 1,000 random graphs, and has a
 > Phase 3 performance baseline. The `optimize` package solves assignment
-> problems by exhaustive search or branch-and-bound. Nothing is released yet,
-> and the API may still change.
+> problems by exhaustive search or branch-and-bound. The first release is
+> v0.1.0, and the API may still change.
 
 ## Why
 
@@ -141,19 +141,19 @@ pushes on the owner's behalf**, by people or by automated tools.
 
 ## Installation and first steps
 
-Atlas has no tagged release, and its API may still change. The v0.x
-compatibility policy is [DECISIONS.md D-018](docs/DECISIONS.md): patch
+The first tagged release is v0.1.0, and the v0.x API may still change. The
+v0.x compatibility policy is [DECISIONS.md D-018](docs/DECISIONS.md): patch
 releases do not break covered API; breaking changes, including changes to
 documented verdicts, assignments, traces, or counted statistics, bump the
 minor version. `core.Store`, `core.Queue`, `core.StateID`, `core.NoParent`,
 `core.MaxStoreLen`, the `models` package, and the wording of printed output
 and error messages are not covered (error identity is). Use keyed struct
 literals: new fields may be added. It needs Go 1.26
-or later and has no dependencies outside the standard library. To use the
-current development version:
+or later and has no dependencies outside the standard library. To add it to
+your module:
 
 ```
-go get github.com/stevenstank/atlas@main
+go get github.com/stevenstank/atlas@v0.1.0
 ```
 
 Start with the runnable examples, which `go test` checks against their
@@ -170,3 +170,7 @@ printed output:
 `go doc github.com/stevenstank/atlas/check` and
 `go doc github.com/stevenstank/atlas/optimize` show the API, and
 [models/](models/) holds larger reference models.
+
+## License
+
+Atlas is released under the MIT License. See [LICENSE](LICENSE).
